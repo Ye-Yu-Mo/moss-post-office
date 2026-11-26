@@ -8,7 +8,7 @@
 浏览器
   ├─ 游戏模拟（盖戳、订单、邮路、远行、月光树）
   ├─ localStorage（离线优先，断网也能玩）
-  └─ 可选同步 → moss-sync（Rust / axum）
+  └─ 可选同步 → /api（同源，serve.py 反代）→ moss-sync（Rust / axum）
                      ├─ 注册、登录、会话
                      ├─ 云存档（不透明 JSON + revision）
                      └─ 事件上报

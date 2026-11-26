@@ -151,6 +151,14 @@ curl -sS -X POST http://127.0.0.1:17322/v1/events \
 - 备份：`sqlite3 data/moss.db ".backup 'backup.db'"`，或停服务后连同 `-wal/-shm` 一起复制。
 - 事件表会持续增长；上线后按周归档或保留 90 天。
 
+## 当前线上部署（HTTP）
+
+- 主机 `/home/jas/games/moss-sync`，release 二进制 `./moss-sync`，systemd user unit `moss-sync.service`（`enable --now`，linger 已开）。
+- 只监听 `127.0.0.1:17322`；`serve.py` 在 17321 上把 `/api/*` 反代过来，因此页面和 API 同源，不需要新开公网端口。
+- 数据库 `data/moss.db`。
+- 重新部署：上传源码 → `cargo build --release --locked` → `cp target/release/moss-sync ./moss-sync` → `systemctl --user restart moss-sync`。
+- HTTP 下按上面的挑战应答运行；真正消除风险仍需 TLS。
+
 ## 部署建议
 
 1. `cargo build --release`，把二进制和 systemd unit 放到服务器。

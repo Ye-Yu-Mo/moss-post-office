@@ -12,11 +12,14 @@ export class CloudError extends Error {
 
 export function defaultBase() {
   if (typeof window === "undefined") return "http://127.0.0.1:17322";
-  if (window.location.protocol === "https:") return "/api";
-  if (window.location.hostname === "47.92.150.181") {
-    return "http://47.92.150.181:17322";
+  if (!window.location.protocol.startsWith("http")) {
+    return "http://127.0.0.1:17322";
   }
-  return "http://127.0.0.1:17322";
+  // Vite dev server has no /api proxy; production/built pages do.
+  if (window.location.port === "5173" || window.location.port === "4173") {
+    return "http://127.0.0.1:17322";
+  }
+  return "/api";
 }
 
 function normalizeBase(base) {

@@ -3,6 +3,8 @@
 
 import gzip
 import hashlib
+import http.client
+import json
 import mimetypes
 import os
 import sys
@@ -12,6 +14,10 @@ from urllib.parse import urlsplit
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DIST = os.path.join(ROOT, "dist")
 INDEX_PATH = os.path.join(DIST, "index.html")
+API_HOST = "127.0.0.1"
+API_PORT = 17322
+API_PREFIX = "/api/"
+MAX_PROXY_BODY = 1024 * 1024
 
 COMPRESSIBLE = {
     ".html": True,
@@ -27,7 +33,7 @@ CSP = (
     "font-src 'self' data: https://fonts.gstatic.com; "
     "script-src 'self' 'unsafe-inline'; "
     "img-src 'self' data:; "
-    "connect-src 'self' https: http://127.0.0.1:17322 http://47.92.150.181:17322; "
+    "connect-src 'self' https: http://127.0.0.1:17322; "
     "object-src 'none'; "
     "base-uri 'none'; "
     "form-action 'none'; "
@@ -104,6 +110,49 @@ class GameHandler(BaseHTTPRequestHandler):
             return self.server.index
         return self.server.resources.get(path)
 
+    def _is_api(self):
+        return urlsplit(self.path).path.startswith(API_PREFIX)
+
+    def _proxy(self, head_only=False):
+        path = urlsplit(self.path).path
+        target = path[len("/api"):] or "/"
+        length = int(self.headers.get("Content-Length") or 0)
+        if length > MAX_PROXY_BODY:
+            self.send_error(413, "Payload too large")
+            return
+        body = self.rfile.read(length) if length else None
+        headers = {}
+        for name in ("Authorization", "Content-Type", "Accept"):
+            value = self.headers.get(name)
+            if value:
+                headers[name] = value
+        if body is not None:
+            headers["Content-Length"] = str(len(body))
+
+        try:
+            connection = http.client.HTTPConnection(API_HOST, API_PORT, timeout=10)
+            connection.request(self.command, target, body=body, headers=headers)
+            response = connection.getresponse()
+            data = response.read()
+            status = response.status
+            content_type = response.getheader("Content-Type", "application/json")
+            connection.close()
+        except OSError:
+            data = json.dumps({"error": "cloud_offline", "message": "sync service unavailable"}).encode()
+            status = 502
+            content_type = "application/json; charset=utf-8"
+
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "close")
+        self._security_headers()
+        self.end_headers()
+        self.close_connection = True
+        if not head_only:
+            self.wfile.write(data)
+
     def _serve_resource(self, head_only=False):
         resource = self._resource()
         if resource is None:
@@ -136,11 +185,38 @@ class GameHandler(BaseHTTPRequestHandler):
         if not head_only:
             self.wfile.write(body)
 
+    def do_OPTIONS(self):
+        if self._is_api():
+            self._proxy()
+            return
+        self.send_response(204)
+        self.send_header("Allow", "GET, HEAD, OPTIONS")
+        self._security_headers()
+        self.end_headers()
+
     def do_GET(self):
+        if self._is_api():
+            self._proxy()
+            return
         self._serve_resource()
 
     def do_HEAD(self):
+        if self._is_api():
+            self._proxy(head_only=True)
+            return
         self._serve_resource(head_only=True)
+
+    def do_POST(self):
+        if self._is_api():
+            self._proxy()
+            return
+        self.send_error(405, "Method not allowed")
+
+    def do_PUT(self):
+        if self._is_api():
+            self._proxy()
+            return
+        self.send_error(405, "Method not allowed")
 
     def log_message(self, format_string, *args):
         print(

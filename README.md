@@ -6,6 +6,7 @@
 
 - 前端：Vite + 原生 DOM/CSS + PixiJS 环境粒子（`web/`）
 - 后端：Rust + axum + SQLite，只做账号、云存档和事件（`server/`）
+- 线上 <http://47.92.150.181:17321/>：`serve.py` 同源反代 `/api` 到本机 17322
 - 玩法离线优先：断网也能玩，登录后可选云同步
 - 架构边界见 [`docs/architecture.md`](docs/architecture.md)
 
@@ -48,7 +49,9 @@ MOSS_BIND=127.0.0.1:17322 MOSS_DB=data/moss.db cargo run
 | `GET/PUT /v1/save` | 云存档，`base_revision` 冲突检测 |
 | `POST /v1/events` | 批量事件上报（平衡/留存） |
 
-服务端不跑游戏循环，也不认识卡牌/订单/月光树。实时房间如果以后要做，另起服务，见架构文档。
+服务端不跑游戏循环，也不认识卡牌/订单/月光树。线上由 `serve.py` 把 `/api/*` 反代到 `127.0.0.1:17322`，所以页面和接口同源，不需要新开公网端口。
+
+当前只能走 HTTP，认证做了妥协：密码不离开浏览器，登录用一次性 nonce + HMAC 挑战应答；但 Bearer token 仍可能被窃听，主动中间人也能改页面。详见 `docs/architecture.md` 的威胁模型。
 
 详见 [`server/README.md`](server/README.md)。
 
