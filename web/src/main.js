@@ -552,7 +552,8 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       unit: "完美盖戳",
       targets: [6, 10, 16],
       ink: [8, 12, 18],
-      minutes: [10, 12, 14]
+      minutes: [10, 12, 14],
+      materialReward: { paper: 1 }
     },
     {
       id: "clicks",
@@ -608,7 +609,8 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       targets: [20, 30, 40],
       ink: [9, 13, 18],
       minutes: [10, 12, 14],
-      condition: { weather: "rainy" }
+      condition: { weather: "rainy" },
+      materialReward: { wax: 1 }
     },
     {
       id: "nobell",
@@ -644,7 +646,36 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       targets: [1, 1, 2],
       ink: [16, 22, 28],
       minutes: [22, 24, 26],
-      requiresRoute: "starport"
+      requiresRoute: "starport",
+      materialReward: { cloth: 1 }
+    },
+    {
+      id: "fragile",
+      title: "包一件易碎品",
+      sender: "陶匠",
+      quote: "把这只小陶罐包好，别让它在路上磕坏。",
+      goalKey: "perfects",
+      unit: "完美盖戳",
+      targets: [3, 5, 7],
+      ink: [10, 14, 18],
+      minutes: [10, 12, 14],
+      materialCost: { paper: 2 },
+      materialReward: { wax: 1 },
+      requiresExpedition: true
+    },
+    {
+      id: "parcel",
+      title: "寄一只布包",
+      sender: "织布鸟",
+      quote: "布包的线头别松，到了山那边还要用。",
+      goalKey: "clicks",
+      unit: "盖戳",
+      targets: [20, 30, 40],
+      ink: [9, 13, 17],
+      minutes: [10, 12, 14],
+      materialCost: { cloth: 2 },
+      materialReward: { paper: 1 },
+      requiresExpedition: true
     }
   ];
 
@@ -1449,7 +1480,10 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
   }
 
   function orderTemplateEligible(template) {
-    return !template.requiresRoute || routeUnlockedForOrders(template.requiresRoute);
+    return (
+      (!template.requiresRoute || routeUnlockedForOrders(template.requiresRoute)) &&
+      (!template.requiresExpedition || expeditionUnlocked())
+    );
   }
 
   function normalizeOffer(raw) {
@@ -1572,6 +1606,30 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
 
   function orderRewardStamps(order) {
     return Math.max(1, Math.round(order.stamps * orderRewardScale()));
+  }
+
+  function orderMaterialCost(order) {
+    const template = orderTpl(order.tpl);
+    return template && template.materialCost ? template.materialCost : {};
+  }
+
+  function canPayMaterials(cost) {
+    return Object.entries(cost || {}).every(
+      ([id, quantity]) => (state.materials[id] || 0) >= quantity
+    );
+  }
+
+  function payMaterials(cost) {
+    Object.entries(cost || {}).forEach(([id, quantity]) => {
+      state.materials[id] = Math.max(0, (state.materials[id] || 0) - quantity);
+    });
+  }
+
+  function materialCostText(cost) {
+    return Object.entries(cost || {})
+      .filter(([id, quantity]) => EXP_MATERIALS[id] && quantity > 0)
+      .map(([id, quantity]) => `${EXP_MATERIALS[id].name}×${quantity}`)
+      .join("、");
   }
 
   function bumpOrders(kind, detail = 1) {
@@ -2692,6 +2750,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     if (!template) return "慢信";
     if (template.condition && template.condition.weather) return "雨天";
     if (template.condition && template.condition.noBell) return "安静";
+    if (template.materialCost) return "包裹";
     if (template.requiresRoute) return "远方";
     return ["慢信", "挂号", "急件"][order.tier] || "慢信";
   }
@@ -2709,8 +2768,12 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
   function acceptedOrderCard(order) {
     const template = orderTpl(order.tpl);
     if (!template) return "";
-    const ready = orderConditionMet(order);
-    const note = orderConditionNote(order);
+    const cost = orderMaterialCost(order);
+    const costText = materialCostText(cost);
+    const canPay = canPayMaterials(cost);
+    const ready = orderConditionMet(order) && canPay;
+    const note = orderConditionNote(order) || (!canPay ? `还差材料：${costText}` : "");
+    const rewardMaterial = materialGainText(template.materialReward);
     const progress = completionPercent(orderProgressValue(order), order.target);
     return `
       <article class="order-card is-accepted${ready ? " is-ready" : ""}" data-order="${order.id}" aria-label="${template.title}，${template.unit} ${orderProgressValue(order)} / ${order.target}">
@@ -2725,9 +2788,11 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
           <b data-order-progress>${orderProgressText(order)}</b>
         </div>
         <div class="order-bar"><span data-order-fill style="width:${progress}%"></span></div>
+        ${costText ? `<div class="order-material-cost">交付需 ${costText}</div>` : ""}
         <div class="order-reward">
           <span>+${formatNumber(orderRewardStamps(order))} 邮票</span>
           <span>+${formatNumber(orderRewardInk(order))} 墨点</span>
+          ${rewardMaterial ? `<span>+${rewardMaterial}</span>` : ""}
         </div>
         <p class="order-note" data-order-note${note ? "" : " hidden"}>${note}</p>
         <div class="order-actions">
@@ -2742,6 +2807,8 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     const template = orderTpl(offer.tpl);
     if (!template) return "";
     const full = state.accepted.length >= orderSlots();
+    const costText = materialCostText(template.materialCost);
+    const rewardMaterial = materialGainText(template.materialReward);
     return `
       <article class="order-card is-offer" data-offer="${offer.id}">
         <div class="order-top">
@@ -2754,9 +2821,11 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
           <span>${template.unit}</span>
           <b>${formatNumber(offer.target)}</b>
         </div>
+        ${costText ? `<div class="order-material-cost">交付需 ${costText}</div>` : ""}
         <div class="order-reward">
           <span>+${formatNumber(Math.round(offer.stamps * orderRewardScale()))} 邮票</span>
           <span>+${formatNumber(Math.round(offer.ink * inkMultiplier()))} 墨点</span>
+          ${rewardMaterial ? `<span>+${rewardMaterial}</span>` : ""}
         </div>
         <div class="order-actions">
           <span class="order-timer">约 ${Math.round(offer.minutes * orderDeadlineScale())} 分钟</span>
@@ -2779,6 +2848,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
         </div>
         <div class="order-ink-box">
           <span class="ink-line-mini"><span class="ink-mark" aria-hidden="true"></span>墨点 <b id="orderInk">${formatNumber(state.ink)}</b></span>
+          <span class="order-materials">材料 ${materialSummary()}</span>
           <button class="order-reroll" type="button" data-reroll-orders ${state.ink < INK_REROLL_COST ? "disabled" : ""}>换一批 · ${INK_REROLL_COST}</button>
         </div>
       </div>
@@ -2787,7 +2857,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
         <div class="order-section-head"><span>手上的信</span><span>${accepted.length} / ${slots}</span></div>
         ${accepted.length
           ? `<div class="order-list">${accepted.map(acceptedOrderCard).join("")}</div>`
-          : `<div class="order-empty">手上还没有信。柜台上的来信可以接下，时限内完成就能拿到邮票和墨点。</div>`}
+          : `<div class="order-empty">手上还没有信。柜台上的来信可以接下，时限内完成就能拿到邮票、墨点，有些信还会留下材料。</div>`}
       </div>
       <div class="order-section">
         <div class="order-section-head"><span>柜台上的信</span><span>每完成 4 封，得 1 枚月光邮戳</span></div>
@@ -2815,8 +2885,10 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       if (!order) return;
       const value = orderProgressValue(order);
       const progress = completionPercent(value, order.target);
-      const ready = orderConditionMet(order);
-      const note = orderConditionNote(order);
+      const cost = orderMaterialCost(order);
+      const canPay = canPayMaterials(cost);
+      const ready = orderConditionMet(order) && canPay;
+      const note = orderConditionNote(order) || (!canPay ? `还差材料：${materialCostText(cost)}` : "");
       const progressEl = card.querySelector("[data-order-progress]");
       if (progressEl) setText(progressEl, orderProgressText(order));
       const fill = card.querySelector("[data-order-fill]");
@@ -2885,10 +2957,23 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       return;
     }
     const template = orderTpl(order.tpl);
+    const cost = orderMaterialCost(order);
+    if (!canPayMaterials(cost)) {
+      playDenySound();
+      showToast(`还差材料：${materialCostText(cost)}`, 2800);
+      return;
+    }
+    payMaterials(cost);
     const stamps = orderRewardStamps(order);
     const ink = orderRewardInk(order);
     addStamps(stamps);
     addInk(ink);
+    const rewardMaterial = template.materialReward || {};
+    Object.entries(rewardMaterial).forEach(([materialId, quantity]) => {
+      if (!EXP_MATERIALS[materialId] || quantity <= 0) return;
+      state.materials[materialId] = Math.min(99, (state.materials[materialId] || 0) + quantity);
+    });
+    const rewardMaterialText = materialGainText(rewardMaterial);
     state.accepted = state.accepted.filter((candidate) => candidate.id !== id);
     state.ordersDone += 1;
 
@@ -2906,7 +2991,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     playUpgradeSound();
     if (!newly.length) {
       showToast(
-        `${template.sender}收到了信：+${formatNumber(stamps)} 邮票，+${formatNumber(ink)} 墨点。${moon ? "柜台凑满 4 封，夜班邮车留下 1 枚月光邮戳。" : ""}`,
+        `${template.sender}收到了信：+${formatNumber(stamps)} 邮票，+${formatNumber(ink)} 墨点${rewardMaterialText ? `，${rewardMaterialText}` : ""}。${moon ? "柜台凑满 4 封，夜班邮车留下 1 枚月光邮戳。" : ""}`,
         4600
       );
     }

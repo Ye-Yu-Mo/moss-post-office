@@ -4641,3 +4641,18 @@ h3 {
 .material-upgrade {
   border-bottom-color: color-mix(in srgb, var(--lavender) 30%, var(--line));
 }
+
+.order-materials {
+  color: var(--muted);
+  font-family: var(--font-data);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.order-material-cost {
+  margin: 0 0 5px;
+  color: var(--wax);
+  font-size: 9px;
+  font-weight: 700;
+}
