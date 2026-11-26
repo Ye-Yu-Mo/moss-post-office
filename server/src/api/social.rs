@@ -109,8 +109,10 @@ pub async fn square(
 #[derive(Serialize)]
 pub struct PostcardView {
     pub id: i64,
+    pub sender_id: String,
     pub sender: String,
     pub sender_kind: String,
+    pub template: String,
     pub text: String,
     pub gift_kind: Option<String>,
     pub gift_amount: i64,
@@ -140,8 +142,10 @@ pub async fn postcards(
         .into_iter()
         .map(|card| PostcardView {
             id: card.id,
+            sender_id: card.sender_id,
             sender: card.sender_name,
             sender_kind: card.sender_kind,
+            template: card.template.clone(),
             text: template_text(&card.template)
                 .unwrap_or("一封从雾湖寄来的信。")
                 .to_string(),

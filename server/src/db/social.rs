@@ -25,6 +25,7 @@ pub struct BotSummary {
 #[derive(Debug, Clone)]
 pub struct PostcardRow {
     pub id: i64,
+    pub sender_id: String,
     pub sender_name: String,
     pub sender_kind: String,
     pub template: String,
@@ -251,7 +252,7 @@ impl Db {
     ) -> Result<Vec<PostcardRow>, ApiError> {
         self.call(move |conn| {
             let mut statement = conn.prepare(
-                "SELECT id, sender_name, sender_kind, template, gift_kind, gift_amount,
+                "SELECT id, sender_id, sender_name, sender_kind, template, gift_kind, gift_amount,
                         created_at, arrives_at, claimed_at
                  FROM postcards
                  WHERE recipient_id = ?1 AND arrives_at <= ?2
@@ -261,14 +262,15 @@ impl Db {
             let rows = statement.query_map(params![user_id, now], |row| {
                 Ok(PostcardRow {
                     id: row.get(0)?,
-                    sender_name: row.get(1)?,
-                    sender_kind: row.get(2)?,
-                    template: row.get(3)?,
-                    gift_kind: row.get(4)?,
-                    gift_amount: row.get(5)?,
-                    created_at: row.get(6)?,
-                    arrives_at: row.get(7)?,
-                    claimed: row.get::<_, Option<i64>>(8)?.is_some(),
+                    sender_id: row.get(1)?,
+                    sender_name: row.get(2)?,
+                    sender_kind: row.get(3)?,
+                    template: row.get(4)?,
+                    gift_kind: row.get(5)?,
+                    gift_amount: row.get(6)?,
+                    created_at: row.get(7)?,
+                    arrives_at: row.get(8)?,
+                    claimed: row.get::<_, Option<i64>>(9)?.is_some(),
                 })
             })?;
             let mut cards = Vec::new();

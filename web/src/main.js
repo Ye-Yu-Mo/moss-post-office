@@ -202,6 +202,17 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     { id: "star", text: "月亮出来的时候，替你把最后一张邮票盖好了。" }
   ];
 
+  const TOWN_BOTS = [
+    { id: "b_moss", name: "苔苔", title: "镇口邮差" },
+    { id: "b_snail", name: "慢慢", title: "蜗牛邮差" },
+    { id: "b_plane", name: "纸飞机", title: "风里的信使" },
+    { id: "b_night", name: "夜班司机", title: "星港夜航" },
+    { id: "b_mushroom", name: "蘑菇太太", title: "柜台常客" },
+    { id: "b_box", name: "邮筒先生", title: "路边邮筒" },
+    { id: "b_star", name: "星港旅人", title: "远方来客" },
+    { id: "b_boat", name: "雾湖船夫", title: "摆渡人" }
+  ];
+
   const WEATHER_DURATION = 150000;
   const WEATHERS = [
     {
@@ -1134,7 +1145,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
 
   function createInitialState(sound = true) {
     return {
-      version: 7,
+      version: 8,
       stamps: 0,
       runEarned: 0,
       totalEarned: 0,
@@ -1159,6 +1170,8 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       expeditionRelics: [],
       materials: { paper: 0, wax: 0, cloth: 0 },
       materialUpgrades: [],
+      postcardAlbum: [],
+      postcardAlbumReward: false,
       gens: Object.fromEntries(GENERATORS.map((gen) => [gen.id, 0])),
       boughtTotal: Object.fromEntries(GENERATORS.map((gen) => [gen.id, 0])),
       upgrades: [],
@@ -1239,6 +1252,17 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     clean.materialUpgrades = Array.isArray(raw.materialUpgrades)
       ? [...new Set(raw.materialUpgrades)].filter((id) => MATERIAL_UPGRADES.some((item) => item.id === id))
       : [];
+    const seenPostcards = new Set();
+    clean.postcardAlbum = Array.isArray(raw.postcardAlbum)
+      ? raw.postcardAlbum.filter((entry) => {
+          if (!entry || typeof entry.senderId !== "string") return false;
+          if (!TOWN_BOTS.some((bot) => bot.id === entry.senderId)) return false;
+          if (seenPostcards.has(entry.senderId)) return false;
+          seenPostcards.add(entry.senderId);
+          return true;
+        }).slice(0, TOWN_BOTS.length)
+      : [];
+    clean.postcardAlbumReward = Boolean(raw.postcardAlbumReward);
     clean.expedition = normalizeExpedition(raw.expedition);
     clean.bellActiveUntil = numberOr(raw.bellActiveUntil);
     clean.bellReadyAt = numberOr(raw.bellReadyAt);
@@ -2321,6 +2345,27 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
             </article>`;
         }).join("")}
       </div>
+      <section class="postcard-album">
+        <div class="tree-head">
+          <span>镇口明信片</span>
+          <span>${state.postcardAlbum.length} / ${TOWN_BOTS.length}${state.postcardAlbumReward ? " · 已集齐" : ""}</span>
+        </div>
+        <p class="tree-note">给镇上的 8 位邮差各寄一张。收齐后会留下 1 枚月光邮戳和一小包材料。</p>
+        <div class="postcard-grid">
+          ${TOWN_BOTS.map((bot) => {
+            const entry = state.postcardAlbum.find((item) => item.senderId === bot.id);
+            return `
+              <article class="postcard-slot${entry ? " is-collected" : ""}">
+                <div class="postcard-slot-top">
+                  <b>${bot.name}</b>
+                  <span>${bot.title}</span>
+                </div>
+                <p>${entry ? escapeHtml(entry.text || "已经收进邮册。") : "还没收到这位邮差的明信片。"}</p>
+                <small>${entry ? "已收进邮册" : "去镇口寄一张"}</small>
+              </article>`;
+          }).join("")}
+        </div>
+      </section>
     `;
 
     albumUi.summary = els.panelBody.querySelector(".album-summary");
@@ -6173,7 +6218,37 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     }
   }
 
+  function addPostcardToAlbum(card) {
+    if (!card || card.sender_kind !== "bot") return { added: false, completed: false };
+    if (!TOWN_BOTS.some((bot) => bot.id === card.sender_id)) {
+      return { added: false, completed: false };
+    }
+    if (state.postcardAlbum.some((entry) => entry.senderId === card.sender_id)) {
+      return { added: false, completed: false };
+    }
+    state.postcardAlbum.push({
+      senderId: card.sender_id,
+      senderName: card.sender,
+      template: card.template,
+      text: card.text,
+      at: Date.now()
+    });
+    const complete = TOWN_BOTS.every((bot) =>
+      state.postcardAlbum.some((entry) => entry.senderId === bot.id)
+    );
+    if (complete && !state.postcardAlbumReward) {
+      state.postcardAlbumReward = true;
+      state.moonStamps += 1;
+      Object.keys(EXP_MATERIALS).forEach((id) => {
+        state.materials[id] = Math.min(99, (state.materials[id] || 0) + 2);
+      });
+      return { added: true, completed: true };
+    }
+    return { added: true, completed: false };
+  }
+
   async function claimTownPostcard(id) {
+
     if (!account || !account.token) return;
     try {
       const result = await cloudApi.claimPostcard(account, id);
@@ -6184,9 +6259,18 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       else if (EXP_MATERIALS[kind]) {
         state.materials[kind] = Math.min(99, (state.materials[kind] || 0) + amount);
       }
+      const card = townData && townData.cards.find((candidate) => candidate.id === id);
+      const album = addPostcardToAlbum(card);
       saveGame();
       refreshLive();
-      showToast(`收下了 ${giftLabel(kind, amount)}。`, 3200);
+      if (album.completed) {
+        showToast("集齐 8 位邮差的明信片：+1 月光邮戳，纸 / 蜡 / 布各 +2。", 6200);
+      } else {
+        showToast(
+          `收下了 ${giftLabel(kind, amount)}${album.added ? "，明信片收进了邮册" : ""}。`,
+          3600
+        );
+      }
       townUnread = Math.max(0, townUnread - 1);
       loadTown();
     } catch (error) {
