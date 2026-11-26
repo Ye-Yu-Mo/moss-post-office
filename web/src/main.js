@@ -5655,6 +5655,18 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     if (error && /postcard limit/i.test(error.message || "")) {
       return "今天已经寄了 5 张明信片，明天再来。";
     }
+    if (error && /already friends/i.test(error.message || "")) {
+      return "你们已经是好友了。";
+    }
+    if (error && /request already pending/i.test(error.message || "")) {
+      return "已经发过申请了，等对方接受。";
+    }
+    if (error && /invalid friend code/i.test(error.message || "")) {
+      return "好友码是 6 位。";
+    }
+    if (error && /friend code/i.test(error.message || "")) {
+      return "没有找到这个好友码，再核对一下。";
+    }
     return (error && error.message) || "操作失败，请稍后再试。";
   }
 
@@ -6049,6 +6061,57 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
 
     const cards = townData.cards || [];
     const players = townData.players || [];
+    const friendData = townData.friends || {
+      code: "",
+      friends: [],
+      incoming: [],
+      outgoing: []
+    };
+    const friendCode = friendData.code || "------";
+    const friendList = friendData.friends || [];
+    const incoming = friendData.incoming || [];
+    const outgoing = friendData.outgoing || [];
+    const friendSection = `
+      <section class="town-section town-friends">
+        <div class="tree-head"><span>好友</span><span>${friendList.length} 位</span></div>
+        <div class="friend-code-row">
+          <span>我的好友码</span>
+          <b>${escapeHtml(friendCode)}</b>
+          <button class="link-btn" type="button" data-copy-friend-code>复制</button>
+        </div>
+        <div class="friend-add-row">
+          <input id="friendCodeInput" maxlength="6" autocomplete="off" placeholder="输入 6 位好友码">
+          <button class="primary-btn friend-add-btn" type="button" data-friend-add>加好友</button>
+        </div>
+        <p class="account-status" id="friendStatus"></p>
+        ${incoming.length
+          ? `<div class="friend-requests">${incoming.map((request) => `
+              <div class="friend-request">
+                <div><b>${escapeHtml(request.from_name)}</b><small>想加你为好友 · ${townTime(request.created_at)}</small></div>
+                <div class="friend-request-actions">
+                  <button class="link-btn" type="button" data-accept-friend="${request.id}">接受</button>
+                  <button class="link-btn" type="button" data-decline-friend="${request.id}">忽略</button>
+                </div>
+              </div>`).join("")}</div>`
+          : ""}
+        ${outgoing.length
+          ? `<p class="friend-note">已申请：${outgoing.map((request) => escapeHtml(request.to_name)).join("、")}，等对方接受。</p>`
+          : ""}
+        ${friendList.length
+          ? `<div class="friend-list">${friendList.map((friend) => `
+              <div class="friend-row">
+                <div class="friend-copy">
+                  <b>${escapeHtml(friend.username)}</b>
+                  <small>${formatNumber(friend.total_stamps)} 邮票 · ${formatNumber(friend.expedition_wins)} 趟远行 · ${townTime(friend.last_active)}</small>
+                </div>
+                <div class="friend-actions">
+                  <button class="link-btn" type="button" data-send-postcard="${escapeHtml(friend.id)}" data-send-kind="user" data-send-name="${escapeHtml(friend.username)}">寄明信片</button>
+                  <button class="link-btn" type="button" data-friend-profile="${escapeHtml(friend.id)}">串门</button>
+                  <button class="link-btn" type="button" data-remove-friend="${escapeHtml(friend.id)}">删除</button>
+                </div>
+              </div>`).join("")}</div>`
+          : `<div class="town-empty">还没有好友。把好友码发给朋友，或者在镇口找一位邮差。</div>`}
+      </section>`;
     const mailbox = cards.length
       ? cards.map((card) => {
           const unclaimed = card.gift_kind && !card.claimed;
@@ -6100,6 +6163,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
           <p class="town-lead">镇口的邮差会互寄明信片。真人玩家和 NPC 都会回信，每天最多寄 5 张。</p>
           <button class="link-btn" type="button" data-town-refresh>刷新</button>
         </div>
+        ${friendSection}
         <section class="town-section">
           <div class="tree-head"><span>收到的明信片</span><span>${cards.length} 封</span></div>
           <div class="town-mail-list">${mailbox}</div>
@@ -6127,15 +6191,19 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     townError = "";
     renderTownModal();
     try {
-      const [square, mailbox] = await Promise.all([
+      const [square, mailbox, friendData] = await Promise.all([
         cloudApi.square(account),
-        cloudApi.postcards(account)
+        cloudApi.postcards(account),
+        cloudApi.friends(account)
       ]);
       townData = {
         players: Array.isArray(square && square.players) ? square.players : [],
-        cards: Array.isArray(mailbox && mailbox.cards) ? mailbox.cards : []
+        cards: Array.isArray(mailbox && mailbox.cards) ? mailbox.cards : [],
+        friends: friendData || { code: "", friends: [], incoming: [], outgoing: [] }
       };
-      townUnread = townData.cards.filter((card) => card.gift_kind && !card.claimed).length;
+      townUnread =
+        townData.cards.filter((card) => card.gift_kind && !card.claimed).length +
+        (townData.friends.incoming || []).length;
       townLoading = false;
       renderTownModal();
     } catch (error) {
@@ -6169,6 +6237,130 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       kicker: "苔藓邮局 · 镇口"
     });
     loadTown();
+  }
+
+  function setFriendStatus(text) {
+    const element = document.getElementById("friendStatus");
+    if (element) setText(element, text);
+  }
+
+  async function copyFriendCode() {
+    const code = townData && townData.friends && townData.friends.code;
+    if (!code) return;
+    try {
+      await navigator.clipboard.writeText(code);
+      showToast(`好友码 ${code} 已复制。`, 2800);
+    } catch (error) {
+      try {
+        const area = document.createElement("textarea");
+        area.value = code;
+        area.style.position = "fixed";
+        area.style.opacity = "0";
+        document.body.appendChild(area);
+        area.select();
+        document.execCommand("copy");
+        area.remove();
+        showToast(`好友码 ${code} 已复制。`, 2800);
+      } catch (fallbackError) {
+        showToast(`好友码：${code}`, 4200);
+      }
+    }
+  }
+
+  async function addFriendByCode() {
+    if (!account || !account.token) return;
+    const input = document.getElementById("friendCodeInput");
+    if (!input) return;
+    const code = input.value.trim().toUpperCase();
+    if (code.length !== 6) {
+      setFriendStatus("好友码是 6 位，字母和数字都可以。");
+      return;
+    }
+    const button = document.querySelector("[data-friend-add]");
+    if (button) button.disabled = true;
+    setFriendStatus("正在送好友申请…");
+    try {
+      const result = await cloudApi.requestFriend(account, code);
+      if (result && result.status === "friends") {
+        showToast("你们已经是好友了。", 3200);
+      } else {
+        showToast("好友申请已经送出。", 3200);
+      }
+      await loadTown();
+    } catch (error) {
+      setFriendStatus(cloudErrorMessage(error));
+      if (button && button.isConnected) button.disabled = false;
+    }
+  }
+
+  async function acceptFriendRequest(id) {
+    if (!account || !account.token) return;
+    try {
+      await cloudApi.acceptFriend(account, id);
+      showToast("好友申请接受了。", 2800);
+      await loadTown();
+    } catch (error) {
+      showToast(cloudErrorMessage(error), 3600);
+    }
+  }
+
+  async function declineFriendRequest(id) {
+    if (!account || !account.token) return;
+    try {
+      await cloudApi.declineFriend(account, id);
+      await loadTown();
+    } catch (error) {
+      showToast(cloudErrorMessage(error), 3600);
+    }
+  }
+
+  async function removeFriendById(id) {
+    if (!account || !account.token) return;
+    try {
+      await cloudApi.removeFriend(account, id);
+      showToast("已经从好友列表里移除了。", 2800);
+      await loadTown();
+    } catch (error) {
+      showToast(cloudErrorMessage(error), 3600);
+    }
+  }
+
+  async function openFriendProfile(id) {
+    if (!account || !account.token) return;
+    openModal({
+      title: "串门",
+      body: `<div class="town-box"><div class="town-loading">正在敲门…</div></div>`,
+      footer: false,
+      kicker: "镇口 · 好友"
+    });
+    try {
+      const profile = await cloudApi.friendProfile(account, id);
+      const friend = profile.friend || {};
+      els.modalBody.innerHTML = `
+        <div class="town-box">
+          <div class="friend-profile">
+            <p class="friend-profile-kicker">好友的邮局</p>
+            <h4>${escapeHtml(friend.username || "一位邮差")}</h4>
+            <p class="town-lead">好友码 ${escapeHtml(friend.friend_code || "------")}</p>
+            <div class="friend-profile-stats">
+              <span><b>${formatNumber(friend.total_stamps || 0)}</b> 邮票</span>
+              <span><b>${formatNumber(friend.expedition_wins || 0)}</b> 趟远行</span>
+              <span><b>${formatNumber(profile.postcards_received || 0)}</b> 张明信片</span>
+            </div>
+            <p class="town-lead">最后活跃：${townTime(friend.last_active || 0)}。</p>
+          </div>
+          <div class="exp-result-actions">
+            <button class="exp-primary" type="button" data-send-postcard="${escapeHtml(friend.id || id)}" data-send-kind="user" data-send-name="${escapeHtml(friend.username || "好友")}">寄明信片</button>
+            <button class="exp-secondary" type="button" data-friend-back>回镇口</button>
+          </div>
+        </div>`;
+    } catch (error) {
+      els.modalBody.innerHTML = `
+        <div class="town-box">
+          <p class="town-lead">${escapeHtml(cloudErrorMessage(error))}</p>
+          <button class="primary-btn" type="button" data-friend-back>回镇口</button>
+        </div>`;
+    }
   }
 
   function openPostcardComposer(id, kind, name) {
@@ -6499,6 +6691,38 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       if (event.target.closest("[data-town-login]")) {
         closeModal();
         openAccountModal();
+        return;
+      }
+      if (event.target.closest("[data-copy-friend-code]")) {
+        copyFriendCode();
+        return;
+      }
+      if (event.target.closest("[data-friend-add]")) {
+        addFriendByCode();
+        return;
+      }
+      const acceptFriend = event.target.closest("[data-accept-friend]");
+      if (acceptFriend) {
+        acceptFriendRequest(Number(acceptFriend.dataset.acceptFriend));
+        return;
+      }
+      const declineFriend = event.target.closest("[data-decline-friend]");
+      if (declineFriend) {
+        declineFriendRequest(Number(declineFriend.dataset.declineFriend));
+        return;
+      }
+      const removeFriend = event.target.closest("[data-remove-friend]");
+      if (removeFriend) {
+        removeFriendById(removeFriend.dataset.removeFriend);
+        return;
+      }
+      const friendProfile = event.target.closest("[data-friend-profile]");
+      if (friendProfile) {
+        openFriendProfile(friendProfile.dataset.friendProfile);
+        return;
+      }
+      if (event.target.closest("[data-friend-back]")) {
+        openTown();
         return;
       }
       const claim = event.target.closest("[data-claim-postcard]");

@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod events;
+pub mod friends;
 pub mod health;
 pub mod save;
 pub mod social;
@@ -35,6 +36,14 @@ pub fn router() -> Router<Arc<AppState>> {
             get(social::postcards).post(social::send_postcard),
         )
         .route("/v1/postcards/{id}/claim", post(social::claim_postcard))
+        .route("/v1/friends", get(friends::list_friends))
+        .route("/v1/friends/request", post(friends::send_friend_request))
+        .route("/v1/friends/accept", post(friends::accept_friend_request))
+        .route("/v1/friends/decline", post(friends::decline_friend_request))
+        .route(
+            "/v1/friends/{id}",
+            get(friends::friend_profile).delete(friends::remove_friend),
+        )
 }
 
 pub(crate) fn public_stats(payload: &serde_json::Value) -> (i64, i64) {

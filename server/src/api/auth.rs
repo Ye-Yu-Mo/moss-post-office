@@ -97,6 +97,7 @@ pub async fn register(
             username: username.clone(),
             username_key,
             verifier: request.verifier.to_ascii_lowercase(),
+            friend_code: auth::new_friend_code(),
             token_hash,
             now: created_at,
             expires_at,

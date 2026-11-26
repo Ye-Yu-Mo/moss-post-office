@@ -1,6 +1,6 @@
 use rusqlite::Connection;
 
-pub(super) const SCHEMA_VERSION: i64 = 4;
+pub(super) const SCHEMA_VERSION: i64 = 5;
 
 const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS users (
     last_login      INTEGER NOT NULL DEFAULT 0,
     total_stamps    INTEGER NOT NULL DEFAULT 0,
     expedition_wins INTEGER NOT NULL DEFAULT 0,
-    last_active     INTEGER NOT NULL DEFAULT 0
+    last_active     INTEGER NOT NULL DEFAULT 0,
+    friend_code     TEXT
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -56,6 +57,27 @@ CREATE TABLE IF NOT EXISTS events (
 
 CREATE INDEX IF NOT EXISTS idx_events_user
     ON events (user_id, id);
+
+CREATE TABLE IF NOT EXISTS friend_requests (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    from_id    TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    to_id      TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL,
+    UNIQUE (from_id, to_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_friend_requests_to
+    ON friend_requests (to_id, id);
+
+CREATE TABLE IF NOT EXISTS friendships (
+    user_id    TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    friend_id  TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, friend_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_friendships_user
+    ON friendships (user_id, friend_id);
 
 CREATE TABLE IF NOT EXISTS bots (
     id            TEXT PRIMARY KEY,
@@ -108,7 +130,13 @@ pub(super) fn init(conn: &Connection) -> rusqlite::Result<()> {
     }
     conn.execute_batch(SCHEMA)?;
     ensure_user_stat_columns(conn)?;
+    conn.execute_batch(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_friend_code
+         ON users (friend_code)
+         WHERE friend_code IS NOT NULL;",
+    )?;
     seed_bots(conn)?;
+    ensure_friend_codes(conn)?;
     conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     Ok(())
 }
@@ -127,9 +155,32 @@ fn ensure_user_stat_columns(conn: &Connection) -> rusqlite::Result<()> {
         ("total_stamps", "INTEGER NOT NULL DEFAULT 0"),
         ("expedition_wins", "INTEGER NOT NULL DEFAULT 0"),
         ("last_active", "INTEGER NOT NULL DEFAULT 0"),
+        ("friend_code", "TEXT"),
     ] {
         if !column_exists(conn, "users", name)? {
             conn.execute_batch(&format!("ALTER TABLE users ADD COLUMN {name} {ddl};"))?;
+        }
+    }
+    Ok(())
+}
+
+fn ensure_friend_codes(conn: &Connection) -> rusqlite::Result<()> {
+    let mut statement =
+        conn.prepare("SELECT id FROM users WHERE friend_code IS NULL OR friend_code = ''")?;
+    let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+    let ids = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+    for id in ids {
+        for _ in 0..8 {
+            let code = crate::auth::new_friend_code();
+            match conn.execute(
+                "UPDATE users SET friend_code = ?1 WHERE id = ?2",
+                rusqlite::params![code, id],
+            ) {
+                Ok(_) => break,
+                Err(rusqlite::Error::SqliteFailure(error, _))
+                    if error.code == rusqlite::ErrorCode::ConstraintViolation => {}
+                Err(error) => return Err(error),
+            }
         }
     }
     Ok(())

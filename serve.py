@@ -218,6 +218,12 @@ class GameHandler(BaseHTTPRequestHandler):
             return
         self.send_error(405, "Method not allowed")
 
+    def do_DELETE(self):
+        if self._is_api():
+            self._proxy()
+            return
+        self.send_error(405, "Method not allowed")
+
     def log_message(self, format_string, *args):
         print(
             f"{self.address_string()} - - [{self.log_date_time_string()}] "

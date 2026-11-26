@@ -14,6 +14,7 @@ pub struct NewAccount {
     pub username: String,
     pub username_key: String,
     pub verifier: String,
+    pub friend_code: String,
     pub token_hash: String,
     pub now: i64,
     pub expires_at: i64,
@@ -28,13 +29,14 @@ impl Db {
             .call(move |conn| -> rusqlite::Result<Result<bool, ()>> {
                 let tx = conn.transaction()?;
                 let inserted = tx.execute(
-                    "INSERT INTO users (id, username, username_key, verifier, created_at, last_login)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
+                    "INSERT INTO users (id, username, username_key, verifier, friend_code, created_at, last_login)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
                     params![
                         account.user_id,
                         account.username,
                         account.username_key,
                         account.verifier,
+                        account.friend_code,
                         account.now
                     ],
                 );

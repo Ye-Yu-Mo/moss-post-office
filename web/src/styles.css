@@ -4936,3 +4936,132 @@ h3 {
     grid-template-columns: 1fr;
   }
 }
+
+.friend-code-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.friend-code-row b {
+  color: var(--ink);
+  font-family: var(--font-data);
+  font-size: 13px;
+  letter-spacing: 0.18em;
+}
+
+.friend-add-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.friend-add-row input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 34px;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-data);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.friend-add-btn {
+  flex: 0 0 auto;
+  width: auto;
+  min-height: 34px;
+  padding: 6px 12px;
+}
+
+.friend-requests,
+.friend-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.friend-request,
+.friend-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 9px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+}
+
+.friend-request b,
+.friend-row b {
+  display: block;
+  color: var(--ink);
+  font-size: 10.5px;
+}
+
+.friend-request small,
+.friend-row small {
+  color: var(--muted);
+  font-size: 8.5px;
+}
+
+.friend-request-actions,
+.friend-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.friend-note {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.friend-profile {
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--lavender) 42%, var(--line));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--lavender) 8%, var(--paper));
+}
+
+.friend-profile-kicker {
+  margin: 0 0 3px;
+  color: var(--lavender);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+
+.friend-profile h4 {
+  margin: 0 0 4px;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 400;
+}
+
+.friend-profile-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 9px 0 6px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.friend-profile-stats b {
+  color: var(--ink);
+  font-family: var(--font-data);
+  font-size: 11px;
+}

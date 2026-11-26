@@ -454,3 +454,119 @@ async fn social_square_postcards_and_bots() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
+
+#[tokio::test]
+async fn friend_code_request_accept_profile_and_remove() {
+    let (app, _dir) = test_app();
+    let alice = register_ok(&app, "friend_alice", None).await;
+    let bob = register_ok(&app, "friend_bob", None).await;
+    let carol = register_ok(&app, "friend_carol", None).await;
+    let alice_token = alice["token"].as_str().unwrap();
+    let bob_token = bob["token"].as_str().unwrap();
+    let carol_token = carol["token"].as_str().unwrap();
+    let bob_id = bob["user_id"].as_str().unwrap();
+
+    let response = app
+        .clone()
+        .oneshot(auth_request("GET", "/v1/friends", alice_token))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let alice_friends = json_body(response).await;
+    let alice_code = alice_friends["code"].as_str().unwrap().to_string();
+    assert_eq!(alice_code.len(), 6);
+    assert_eq!(alice_friends["friends"].as_array().unwrap().len(), 0);
+
+    let response = app
+        .clone()
+        .oneshot(post_json(
+            bob_token,
+            "/v1/friends/request",
+            json!({ "code": alice_code }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(json_body(response).await["status"], "sent");
+
+    let response = app
+        .clone()
+        .oneshot(auth_request("GET", "/v1/friends", alice_token))
+        .await
+        .unwrap();
+    let alice_friends = json_body(response).await;
+    let request_id = alice_friends["incoming"][0]["id"].as_i64().unwrap();
+
+    let response = app
+        .clone()
+        .oneshot(post_json(
+            alice_token,
+            "/v1/friends/accept",
+            json!({ "id": request_id }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    for (token, expected) in [(alice_token, "friend_bob"), (bob_token, "friend_alice")] {
+        let response = app
+            .clone()
+            .oneshot(auth_request("GET", "/v1/friends", token))
+            .await
+            .unwrap();
+        let body = json_body(response).await;
+        assert!(body["friends"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|friend| friend["username"] == expected));
+    }
+
+    let response = app
+        .clone()
+        .oneshot(auth_request(
+            "GET",
+            &format!("/v1/friends/{bob_id}"),
+            alice_token,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let profile = json_body(response).await;
+    assert_eq!(profile["friend"]["username"], "friend_bob");
+
+    let response = app
+        .clone()
+        .oneshot(auth_request(
+            "GET",
+            &format!("/v1/friends/{bob_id}"),
+            carol_token,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    let response = app
+        .clone()
+        .oneshot(auth_request(
+            "DELETE",
+            &format!("/v1/friends/{bob_id}"),
+            alice_token,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let response = app
+        .clone()
+        .oneshot(auth_request("GET", "/v1/friends", bob_token))
+        .await
+        .unwrap();
+    assert_eq!(
+        json_body(response).await["friends"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+}

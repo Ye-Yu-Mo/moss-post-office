@@ -18,6 +18,7 @@ src/
     save.rs        云存档
     events.rs      事件上报
     social.rs      镇口、明信片、NPC 回信
+    friends.rs     好友码、申请、好友列表、串门
     health.rs
   auth/
     mod.rs         token、SHA-256、HMAC 校验、用户名归一化
@@ -28,6 +29,7 @@ src/
     sessions.rs    会话
     challenges.rs  一次性登录 nonce
     social.rs      排行榜、明信片、NPC 种子
+    friends.rs     好友关系与申请
     saves.rs       存档 + revision
     events.rs      批量写入
 ```
@@ -156,10 +158,19 @@ curl -sS -X POST http://127.0.0.1:17322/v1/events \
 - `POST /v1/postcards/{id}/claim` 标记已领取并返回礼物。礼物由客户端写入本地存档（服务端不改存档），属于小额的客户端权威设计。
 - 排行榜只公开用户名、邮票、远行胜场和最后活跃时间，不公开存档。
 
+## 好友
+
+- 注册时生成 6 位好友码（`ABCDEFGHJKLMNPQRSTUVWXYZ23456789`），好友码是唯一、可分享的；不公开在排行榜里。
+- 申请 → 接受后写入双向 `friendships`；双方互相可见。
+- 如果两个人互相发了申请，第二次申请会自动成为好友，不需要再接受。
+- 好友档案只对好友开放：用户名、好友码、邮票、远行胜场、最后活跃、收到的明信片数；非好友返回 404。
+- 删除好友会同时删除双向关系；不删除任何存档或明信片。
+- 好友明信片复用现有 `/v1/postcards`，每天 5 张上限、预设模板、真人之间不带资源礼物。
+
 ## 数据与备份
 
-- 表：`users`、`sessions`、`login_challenges`、`saves`、`events`、`bots`、`postcards`、`postcard_sends`；SQLite WAL。
-- v1 的匿名表重命名为 `*_v1_legacy`；v2 的 Argon2 密码表重命名为 `*_v2_legacy`，都不会被静默删除。v4 给 `users` 增加公开统计列并创建社交表。
+- 表：`users`、`sessions`、`login_challenges`、`saves`、`events`、`bots`、`postcards`、`postcard_sends`、`friend_requests`、`friendships`；SQLite WAL。
+- v1 的匿名表重命名为 `*_v1_legacy`；v2 的 Argon2 密码表重命名为 `*_v2_legacy`，都不会被静默删除。v4 给 `users` 增加公开统计列并创建社交表；v5 增加 `friend_code` 与好友关系表。
 - `verifier` 是 256 位派生值；它等价于本站的登录密钥，数据库泄露仍会导致账号被冒用，请限制 DB 访问并备份加密。
 - 备份：`sqlite3 data/moss.db ".backup 'backup.db'"`，或停服务后连同 `-wal/-shm` 一起复制。
 - 事件表会持续增长；上线后按周归档或保留 90 天。

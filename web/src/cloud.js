@@ -168,6 +168,47 @@ export async function sendPostcard(account, recipientId, recipientKind, template
   });
 }
 
+export async function friends(account) {
+  return request(account.base, "/v1/friends", { token: account.token });
+}
+
+export async function requestFriend(account, code) {
+  return request(account.base, "/v1/friends/request", {
+    method: "POST",
+    token: account.token,
+    body: { code }
+  });
+}
+
+export async function acceptFriend(account, id) {
+  return request(account.base, "/v1/friends/accept", {
+    method: "POST",
+    token: account.token,
+    body: { id }
+  });
+}
+
+export async function declineFriend(account, id) {
+  return request(account.base, "/v1/friends/decline", {
+    method: "POST",
+    token: account.token,
+    body: { id }
+  });
+}
+
+export async function removeFriend(account, friendId) {
+  return request(account.base, `/v1/friends/${encodeURIComponent(friendId)}`, {
+    method: "DELETE",
+    token: account.token
+  });
+}
+
+export async function friendProfile(account, friendId) {
+  return request(account.base, `/v1/friends/${encodeURIComponent(friendId)}`, {
+    token: account.token
+  });
+}
+
 export async function claimPostcard(account, postcardId) {
   return request(account.base, `/v1/postcards/${postcardId}/claim`, {
     method: "POST",

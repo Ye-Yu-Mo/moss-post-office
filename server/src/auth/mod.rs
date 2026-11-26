@@ -1,6 +1,6 @@
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use hmac::{Hmac, Mac};
-use rand::{thread_rng, RngCore};
+use rand::{thread_rng, Rng, RngCore};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
@@ -18,6 +18,14 @@ pub fn new_token() -> String {
 
 pub fn new_nonce() -> String {
     new_token()
+}
+
+pub fn new_friend_code() -> String {
+    const ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let mut rng = thread_rng();
+    (0..6)
+        .map(|_| ALPHABET[rng.gen_range(0..ALPHABET.len())] as char)
+        .collect()
 }
 
 pub fn sha256_hex(input: &str) -> String {

@@ -1,5 +1,6 @@
 mod challenges;
 mod events;
+mod friends;
 mod saves;
 mod schema;
 mod sessions;
@@ -13,6 +14,7 @@ use rusqlite::Connection;
 use crate::error::ApiError;
 
 pub use events::NewEvent;
+pub use friends::{FriendProfile, FriendRequestOutcome, FriendRequestView, FriendSummary};
 pub use saves::StoredSave;
 pub use sessions::SessionUser;
 pub use social::{BotSummary, NewPostcard, PostcardRow, SquareUser};
