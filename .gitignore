@@ -1,0 +1,15 @@
+.DS_Store
+*.log
+
+# Rust build output
+/server/target/
+/server/data/
+*.db
+*.db-shm
+*.db-wal
+
+# Local env / secrets
+.env
+
+# Generated single-file build (recreate with build_standalone.py)
+/moss-post-office.html

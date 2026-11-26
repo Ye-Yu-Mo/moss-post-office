@@ -1,0 +1,14 @@
+[
+  {
+    "name": "icon_sheet",
+    "size": "1024x1536",
+    "background": "transparent",
+    "quality": "high",
+    "prompt": "A sprite sheet of 24 small storybook game icons arranged in a strict 4-column by 6-row grid on a fully transparent background. Each icon sits alone, perfectly centered inside its own invisible square cell, with generous even padding around it and wide empty transparent gutters between icons. No background scenery, no frame, no border, no grid lines, no text, no labels, no numbers, no drop shadows crossing cell edges. The icons, reading left to right and top to bottom: a cute garden snail carrying a tiny leather mail satchel; a red-capped spotted mushroom; a folded paper airplane; a small moss-green postal van; a fluffy pale cloud with two envelopes tucked in it; a golden five-pointed star with a tiny arched door and warm window; a red wax seal stamp on a cream letter; a small bottle of craft glue; a wooden rubber stamp handle; a little brass post bell; a cream teacup with a curl of steam; a lavender canvas mail pouch; a small wooden ladder; a curling fern frond; a tiny paper sailboat on a wave; a smiling golden sun with soft rays; a soft swirl of wind with drifting leaf; a rain cloud with three fat raindrops; three soft horizontal bands of mist; a dusty-rose mailbox on a wooden post with its flag raised; a cream envelope sealed with a red heart wax seal; a small canvas shopping tote bag; a speaker with three sound waves; a speaker with a small cross meaning muted. Consistent hand-painted gouache and colored-pencil children's storybook style across every icon, soft dark-brown outlines of even weight, muted moss green, warm cream, dusty rose, honey gold and lavender palette, gentle warm light from the upper left, cozy and whimsical, each icon readable at small size."
+  },
+  {
+    "name": "moon_banner",
+    "size": "1536x1024",
+    "prompt": "A wide storybook illustration of a moonlit moss village seen from a hill at night, painted in soft gouache and colored pencil with visible paper grain, made for a decorative banner. Composition designed to crop to a very wide strip: the crescent moon and scattered stars sit in the upper third, softly glowing cottage windows, tiny chimneys, lanterns and a winding path sit across the middle, dark mossy tree silhouettes frame the far left and right edges, the bottom is a quiet dark meadow. Deep teal, plum, dusty lavender and warm honey palette, gentle mist, a few fireflies, no characters in close-up, no text, no lettering, no logo, no border, no watermark. Atmospheric, calm, cohesive with a cozy woodland post office storybook game."
+  }
+]

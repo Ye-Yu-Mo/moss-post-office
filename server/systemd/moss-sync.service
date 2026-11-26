@@ -1,0 +1,18 @@
+[Unit]
+Description=Moss Post Office sync service
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/jas/games/moss-sync
+Environment=MOSS_BIND=127.0.0.1:17322
+Environment=MOSS_DB=/home/jas/games/moss-sync/data/moss.db
+Environment=RUST_LOG=moss_sync=info,tower_http=warn
+ExecStart=/home/jas/games/moss-sync/moss-sync
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

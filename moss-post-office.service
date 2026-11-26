@@ -1,0 +1,16 @@
+[Unit]
+Description=Moss Post Office static game on port 17321
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/jas/games/moss-post-office
+ExecStart=/usr/bin/python3 /home/jas/games/moss-post-office/serve.py 17321
+Restart=on-failure
+RestartSec=2
+Environment=PYTHONUNBUFFERED=1
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target
