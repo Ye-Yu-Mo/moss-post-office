@@ -7,6 +7,7 @@
 - 前端：Vite + 原生 DOM/CSS + PixiJS 环境粒子（`web/`）
 - 后端：Rust + axum + SQLite，只做账号、云存档和事件（`server/`）
 - 线上 <http://47.92.150.181:17321/>：`serve.py` 同源反代 `/api` 到本机 17322
+- 远行材料（纸 / 蜡 / 布）：路况掉落，行前准备消耗，换牌、护信或加固邮袋
 - 玩法离线优先：断网也能玩，登录后可选云同步
 - 架构边界见 [`docs/architecture.md`](docs/architecture.md)
 

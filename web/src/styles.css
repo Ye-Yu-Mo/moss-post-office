@@ -4617,3 +4617,13 @@ h3 {
     grid-template-columns: 1fr 1fr;
   }
 }
+
+.exp-prep .exp-choice.is-selected {
+  border-color: color-mix(in srgb, var(--moss) 55%, var(--line));
+  background: color-mix(in srgb, var(--moss-light) 24%, var(--paper));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--moss) 18%, transparent);
+}
+
+.exp-prep .exp-choice.is-selected b {
+  color: var(--moss-deep);
+}

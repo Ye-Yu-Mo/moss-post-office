@@ -858,6 +858,25 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     wax: { name: "蜡封", desc: "每趟第一次失败不掉信" }
   };
 
+  const EXP_MATERIALS = {
+    paper: { name: "纸" },
+    wax: { name: "蜡" },
+    cloth: { name: "布" }
+  };
+
+  const EXP_MATERIAL_BY_TAG = {
+    rain: "paper",
+    wind: "paper",
+    night: "wax",
+    road: "cloth"
+  };
+
+  const EXP_PREP = {
+    paper: { name: "多带一张牌", cost: 2, desc: "从已解锁的牌里随机多带 1 张" },
+    wax: { name: "蜡封护信", cost: 1, desc: "本趟第一次失败不掉信" },
+    cloth: { name: "加固邮袋", cost: 2, desc: "开局多 2 份干粮" }
+  };
+
   const EXP_HAZARDS = [
     { tag: "rain", title: "雨夜", desc: "雨把路泡软了，信纸开始发潮。", need: 3 },
     { tag: "road", title: "断桥", desc: "桥面塌了一半，邮车过不去。", need: 3 },
@@ -1000,6 +1019,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
   let lastEventId = "";
   let expSelection = [];
   let expConfirmAbandon = false;
+  let expeditionPrep = new Set();
   let account = null;
   let accountMode = "login";
   let accountBaseDraft = cloudApi.defaultBase();
@@ -1059,6 +1079,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       expeditionWins: 0,
       expeditionDeck: [...EXP_STARTER],
       expeditionRelics: [],
+      materials: { paper: 0, wax: 0, cloth: 0 },
       gens: Object.fromEntries(GENERATORS.map((gen) => [gen.id, 0])),
       boughtTotal: Object.fromEntries(GENERATORS.map((gen) => [gen.id, 0])),
       upgrades: [],
@@ -1130,6 +1151,12 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
           .filter((id) => EXP_RELICS[id])
           .slice(0, 3)
       : [];
+    const materials = raw.materials && typeof raw.materials === "object" ? raw.materials : {};
+    clean.materials = {
+      paper: Math.min(99, Math.floor(numberOr(materials.paper))),
+      wax: Math.min(99, Math.floor(numberOr(materials.wax))),
+      cloth: Math.min(99, Math.floor(numberOr(materials.cloth)))
+    };
     clean.expedition = normalizeExpedition(raw.expedition);
     clean.bellActiveUntil = numberOr(raw.bellActiveUntil);
     clean.bellReadyAt = numberOr(raw.bellReadyAt);
@@ -3043,6 +3070,41 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     return state.totalEarned >= 700 || state.expeditionWins > 0;
   }
 
+  function expeditionRandom() {
+    const exp = state && state.expedition;
+    if (!exp) return Math.random();
+    let value = (Number(exp.rngState) || Number(exp.seed) || 1) >>> 0;
+    value = (value + 0x6d2b79f5) >>> 0;
+    exp.rngState = value;
+    value = Math.imul(value ^ (value >>> 15), value | 1);
+    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+    return ((value ^ (value >>> 14)) >>> 0) / 4_294_967_296;
+  }
+
+  function expeditionMaterialGain(option) {
+    if (!option) return {};
+    if (option.kind === "boss") {
+      return { paper: 2, wax: 2, cloth: 2 };
+    }
+    if (option.material && EXP_MATERIALS[option.material]) {
+      return { [option.material]: Math.max(1, Math.floor(option.materialQty || 1)) };
+    }
+    return {};
+  }
+
+  function materialSummary() {
+    return Object.entries(EXP_MATERIALS)
+      .map(([id, material]) => `${material.name} ${state.materials[id] || 0}`)
+      .join(" · ");
+  }
+
+  function materialGainText(materials) {
+    return Object.entries(materials || {})
+      .filter(([id, quantity]) => EXP_MATERIALS[id] && quantity > 0)
+      .map(([id, quantity]) => `${EXP_MATERIALS[id].name}×${quantity}`)
+      .join("、");
+  }
+
   function expeditionCardUnlocked(id, wins) {
     const card = EXP_CARDS[id];
     const threshold = wins === undefined ? (state ? state.expeditionWins : 0) : wins;
@@ -3056,7 +3118,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
 
   function expeditionRandomUnlockedCard() {
     const pool = expeditionUnlockedCardPool();
-    return pool[Math.floor(Math.random() * pool.length)] || "stamp";
+    return pool[Math.floor(expeditionRandom() * pool.length)] || "stamp";
   }
 
   function hasRelic(id) {
@@ -3082,6 +3144,11 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
   function expeditionSpendLetter(reason) {
     const exp = state.expedition;
     if (!exp) return;
+    if (exp.prepShield) {
+      exp.prepShield = false;
+      expeditionLog("行前多封的蜡替你保住了一封信。");
+      return;
+    }
     if (hasRelic("wax") && !exp.waxUsed) {
       exp.waxUsed = true;
       expeditionLog("蜡封裂开一点，替你保住了一封信。");
@@ -3094,7 +3161,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
   function expeditionShuffle(list) {
     const copy = [...list];
     for (let index = copy.length - 1; index > 0; index -= 1) {
-      const swap = Math.floor(Math.random() * (index + 1));
+      const swap = Math.floor(expeditionRandom() * (index + 1));
       [copy[index], copy[swap]] = [copy[swap], copy[index]];
     }
     return copy;
@@ -3114,7 +3181,12 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       hand: cards(raw.hand),
       loot: {
         stamps: Math.floor(numberOr(raw.loot && raw.loot.stamps)),
-        ink: Math.floor(numberOr(raw.loot && raw.loot.ink))
+        ink: Math.floor(numberOr(raw.loot && raw.loot.ink)),
+        materials: {
+          paper: Math.min(99, Math.floor(numberOr(raw.loot && raw.loot.materials && raw.loot.materials.paper))),
+          wax: Math.min(99, Math.floor(numberOr(raw.loot && raw.loot.materials && raw.loot.materials.wax))),
+          cloth: Math.min(99, Math.floor(numberOr(raw.loot && raw.loot.materials && raw.loot.materials.cloth)))
+        }
       },
       rate: Math.max(1, numberOr(raw.rate, 1)),
       log: Array.isArray(raw.log) ? raw.log.filter((line) => typeof line === "string").slice(0, 8) : [],
@@ -3128,6 +3200,10 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
             options: cards(raw.cardChoice.options).slice(0, 3)
           }
         : null,
+      waxUsed: Boolean(raw.waxUsed),
+      prepShield: Boolean(raw.prepShield),
+      seed: Math.floor(numberOr(raw.seed)),
+      rngState: Math.floor(numberOr(raw.rngState)),
       startedAt: numberOr(raw.startedAt)
     };
     if (!exp.result && exp.letters <= 0) exp.letters = 1;
@@ -3143,7 +3219,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
   function expeditionOptions(stage) {
     if (stage >= 6) {
       const rate = state.expedition ? state.expedition.rate : 1;
-      const boss = EXP_BOSSES[Math.floor(Math.random() * EXP_BOSSES.length)];
+      const boss = EXP_BOSSES[Math.floor(expeditionRandom() * EXP_BOSSES.length)];
       return [{
         kind: "boss",
         bossId: boss.id,
@@ -3171,12 +3247,12 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
         return { kind: "trade", tag: "trade", title: "湖边集市", desc: "货郎铺开一块布，愿意用邮票和墨点换东西。" };
       }
       if (kind === "event") {
-        const event = EXP_EVENTS[Math.floor(Math.random() * EXP_EVENTS.length)];
+        const event = EXP_EVENTS[Math.floor(expeditionRandom() * EXP_EVENTS.length)];
         return { kind: "event", tag: "event", eventId: event.id, title: event.title, desc: event.text };
       }
       let pool = EXP_HAZARDS.filter((hazard) => !usedHazards.has(hazard.tag));
       if (!pool.length) pool = EXP_HAZARDS;
-      const hazard = pool[Math.floor(Math.random() * pool.length)];
+      const hazard = pool[Math.floor(expeditionRandom() * pool.length)];
       usedHazards.add(hazard.tag);
       const rate = state.expedition ? state.expedition.rate : 1;
       return {
@@ -3186,32 +3262,49 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
         desc: hazard.desc,
         need: hazard.need + (stage >= 4 ? 1 : 0),
         stamps: Math.round(rate * (12 + stage * 4) + 40 * stage),
-        ink: 1 + Math.floor(stage / 2)
+        ink: 1 + Math.floor(stage / 2),
+        material: EXP_MATERIAL_BY_TAG[hazard.tag] || "paper",
+        materialQty: 1 + (stage >= 4 ? 1 : 0)
       };
     });
   }
 
-  function startExpedition() {
+  function startExpedition(prep = []) {
     if (!expeditionUnlocked()) {
       playDenySound();
       return false;
     }
     if (state.expedition && !state.expedition.result) return false;
+
+    const chosenPrep = prep.filter((id) => EXP_PREP[id]);
+    for (const id of chosenPrep) {
+      if ((state.materials[id] || 0) < EXP_PREP[id].cost) {
+        playDenySound();
+        showToast("材料不够，先轻装出发吧。", 3200);
+        return false;
+      }
+    }
+    chosenPrep.forEach((id) => {
+      state.materials[id] = Math.max(0, (state.materials[id] || 0) - EXP_PREP[id].cost);
+    });
+
     const startingDeck = state.expeditionDeck.length
       ? [...state.expeditionDeck]
       : [...EXP_STARTER];
-    if (hasNode("pack3")) startingDeck.push(expeditionRandomUnlockedCard());
     const startingSupplies =
-      5 + (hasNode("pack1") ? 1 : 0) + (hasRelic("spare_bag") ? 2 : 0);
-    state.expedition = {
+      5 + (hasNode("pack1") ? 1 : 0) + (hasRelic("spare_bag") ? 2 : 0) +
+      (chosenPrep.includes("cloth") ? 2 : 0);
+    const seed = ((Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0) || 1;
+
+    const exp = {
       active: true,
       stage: 1,
       letters: expeditionMaxLetters(),
       supplies: Math.min(9, startingSupplies),
-      deck: expeditionShuffle(startingDeck),
+      deck: [],
       discard: [],
       hand: [],
-      loot: { stamps: 0, ink: 0 },
+      loot: { stamps: 0, ink: 0, materials: { paper: 0, wax: 0, cloth: 0 } },
       rate: Math.max(1, baseRate()),
       log: ["你背起邮袋，走出苔藓镇。"],
       options: [],
@@ -3220,9 +3313,21 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       needBonus: 0,
       cardChoice: null,
       waxUsed: false,
+      prepShield: chosenPrep.includes("wax"),
+      seed,
+      rngState: seed,
       startedAt: Date.now()
     };
-    state.expedition.options = expeditionOptions(1);
+    state.expedition = exp;
+    if (hasNode("pack3")) startingDeck.push(expeditionRandomUnlockedCard());
+    if (chosenPrep.includes("paper")) {
+      startingDeck.push(expeditionRandomUnlockedCard());
+      expeditionLog("多带的一张牌塞进了背囊。");
+    }
+    if (chosenPrep.includes("wax")) expeditionLog("蜡封多封了一道。");
+    if (chosenPrep.includes("cloth")) expeditionLog("邮袋加固过，干粮多带了 2 份。");
+    exp.deck = expeditionShuffle(startingDeck);
+    exp.options = expeditionOptions(1);
     expSelection = [];
     expConfirmAbandon = false;
     saveGame();
@@ -3309,6 +3414,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
           <b>雾湖之外</b>
           <p>${note}</p>
           <p class="expedition-meta">背囊 ${state.expeditionDeck.length} 张${relicNames.length ? ` · 遗物 ${relicNames.join("、")}` : ""}</p>
+          <p class="expedition-meta">材料 ${materialSummary()}</p>
           ${unlocked && !active && !result
             ? `<p class="expedition-next">${nextUnlock ? `再赢 ${nextUnlock.unlockWins - state.expeditionWins} 趟解锁「${nextUnlock.name}」` : "邮差牌已全部解锁"}</p>`
             : ""}
@@ -3487,7 +3593,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     });
     const min = Math.min(...pool.map((id) => counts[id] || 0));
     const best = pool.filter((id) => (counts[id] || 0) === min);
-    return best[Math.floor(Math.random() * best.length)];
+    return best[Math.floor(expeditionRandom() * best.length)];
   }
 
   function expeditionCardChoiceOptions(count = 3) {
@@ -3520,14 +3626,13 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
         const relic = EXP_RELICS[relicId];
         rewards.push({ type: "relic", id: relicId, name: relic.name, desc: relic.desc });
       }
-      const stamps = Math.round(rate * 25 + 800);
       rewards.push({
-        type: "supply",
-        id: "bundle",
-        name: "补给包",
-        desc: `+${formatNumber(stamps)} 邮票 · +8 墨点`,
-        stamps,
-        ink: 8
+        type: "materials",
+        id: "materials",
+        name: "材料包",
+        desc: "纸×2 · 蜡×1 · 布×1 · +300 邮票",
+        materials: { paper: 2, wax: 1, cloth: 1 },
+        stamps: 300
       });
     } else {
       const stamps = Math.round(rate * 8 + 200);
@@ -3561,6 +3666,12 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       if (!state.expeditionRelics.includes(reward.id) && state.expeditionRelics.length < 3) {
         state.expeditionRelics.push(reward.id);
       }
+    } else if (reward.type === "materials") {
+      Object.entries(reward.materials || {}).forEach(([id, quantity]) => {
+        if (!EXP_MATERIALS[id] || quantity <= 0) return;
+        state.materials[id] = Math.min(99, (state.materials[id] || 0) + quantity);
+      });
+      addStamps(reward.stamps || 0);
     } else if (reward.type === "supply") {
       addStamps(reward.stamps || 0);
       addInk(reward.ink || 0);
@@ -3578,6 +3689,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     const rewards = Array.isArray(result.rewards) ? result.rewards : [];
     const picked = result.rewardPicked !== undefined && result.rewardPicked !== null;
     const unlocked = Array.isArray(result.unlocked) ? result.unlocked : [];
+    const gainedMaterials = materialGainText(result.materials);
     const relics = state.expeditionRelics
       .map((id) => EXP_RELICS[id] && EXP_RELICS[id].name)
       .filter(Boolean);
@@ -3598,8 +3710,8 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       <div class="exp-result ${result.success ? "is-win" : "is-lose"}">
         <span class="exp-tag">${result.success ? "抵达星港" : "信留在了路上"}</span>
         <h4>${result.success ? "最后一班星船赶上了" : "这一趟只能到这里"}</h4>
-        <p>带回 ${formatNumber(result.stamps)} 张邮票、${formatNumber(result.ink)} 墨点${result.moon ? `、${result.moon} 枚月光邮戳` : ""}。</p>
-        <p>${result.success ? "远行成功次数 +1。下一趟会遇到新的路。" : "失败只带回 30% 的邮袋；下一次会更好。"}</p>
+        <p>带回 ${formatNumber(result.stamps)} 张邮票、${formatNumber(result.ink)} 墨点${result.moon ? `、${result.moon} 枚月光邮戳` : ""}${gainedMaterials ? `、${gainedMaterials}` : ""}。</p>
+        <p>${result.success ? "远行成功次数 +1。材料可以下次行前使用。下一趟会遇到新的路。" : "失败只带回 30% 的邮袋，材料留在了路上；下一次会更好。"}</p>
         ${unlocked.length ? `<p class="exp-unlock">新牌解锁：${unlocked.join("、")}</p>` : ""}
         <p class="exp-meta">背囊 ${state.expeditionDeck.length} 张${relics.length ? ` · 遗物 ${relics.join("、")}` : ""}</p>
         ${rewardMarkup}
@@ -3665,16 +3777,72 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     if (focusTarget) focusTarget.focus({ preventScroll: true });
   }
 
-  function openExpedition() {
+  function expeditionPrepMarkup() {
+    const selected = expeditionPrep;
+    return `
+      <div class="exp-prep">
+        <p class="exp-lead">行前准备</p>
+        <p class="account-hint">材料是远行成功后带回的。每次准备会消耗一份，整趟有效。</p>
+        <div class="exp-choices">
+          ${Object.entries(EXP_PREP).map(([id, item]) => {
+            const isSelected = selected.has(id);
+            const affordable = (state.materials[id] || 0) >= item.cost;
+            return `
+              <button class="exp-choice${isSelected ? " is-selected" : ""}" type="button" data-prep-toggle="${id}" ${!isSelected && !affordable ? "disabled" : ""}>
+                <b>${item.name} · ${EXP_MATERIALS[id].name} ${item.cost}</b>
+                <span>${item.desc}${!isSelected && !affordable ? " · 材料不够" : ""}</span>
+              </button>`;
+          }).join("")}
+        </div>
+        <p class="exp-hint">现有材料：${materialSummary()}</p>
+        <div class="exp-result-actions">
+          <button class="exp-primary" type="button" data-prep-start>${selected.size ? "带着这些出发" : "空手出发"}</button>
+          <button class="exp-secondary" type="button" data-prep-skip>不带材料，直接走</button>
+        </div>
+      </div>`;
+  }
+
+  function openExpeditionPrep() {
     if (!state) return;
     if (!expeditionUnlocked()) {
       playDenySound();
       showToast(`累计 ${formatNumber(700)} 张邮票后，邮路会延伸到雾湖之外。`, 3200);
       return;
     }
-    if (!state.expedition) {
-      if (!startExpedition()) return;
+    expeditionPrep = new Set();
+    openModal({
+      title: "收拾邮袋",
+      body: expeditionPrepMarkup(),
+      footer: false,
+      wide: true,
+      kicker: "苔藓邮局 · 远行准备"
+    });
+  }
+
+  function toggleExpeditionPrep(id) {
+    if (!EXP_PREP[id]) return;
+    if (expeditionPrep.has(id)) {
+      expeditionPrep.delete(id);
+    } else if ((state.materials[id] || 0) >= EXP_PREP[id].cost) {
+      expeditionPrep.add(id);
+    } else {
+      playDenySound();
+      return;
     }
+    if (els.modalBody.querySelector(".exp-prep")) {
+      els.modalBody.innerHTML = expeditionPrepMarkup();
+    }
+  }
+
+  function startExpeditionWithPrep(skip = false) {
+    const prep = skip ? [] : [...expeditionPrep];
+    if (!startExpedition(prep)) return;
+    expeditionPrep = new Set();
+    openExpeditionModal();
+  }
+
+  function openExpeditionModal() {
+    if (!state || !state.expedition) return;
     expSelection = [];
     expConfirmAbandon = false;
     if (!state.expedition.result) state.expedition.active = true;
@@ -3688,6 +3856,20 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     if (!state.expedition.result) saveGame();
     const focusTarget = els.modalBody.querySelector(".exp-option, .exp-primary, .exp-result-actions button");
     if (focusTarget) focusTarget.focus({ preventScroll: true });
+  }
+
+  function openExpedition() {
+    if (!state) return;
+    if (!expeditionUnlocked()) {
+      playDenySound();
+      showToast(`累计 ${formatNumber(700)} 张邮票后，邮路会延伸到雾湖之外。`, 3200);
+      return;
+    }
+    if (!state.expedition) {
+      openExpeditionPrep();
+      return;
+    }
+    openExpeditionModal();
   }
 
   function expeditionLog(line) {
@@ -3829,7 +4011,12 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     if (power >= current.need) {
       exp.loot.stamps += current.stamps || 0;
       exp.loot.ink += current.ink || 0;
-      expeditionLog(`投递成功：${current.title}，+${formatNumber(current.stamps || 0)} 邮票、+${current.ink || 0} 墨点。`);
+      const gainedMaterials = expeditionMaterialGain(current);
+      Object.entries(gainedMaterials).forEach(([id, quantity]) => {
+        exp.loot.materials[id] = Math.min(99, (exp.loot.materials[id] || 0) + quantity);
+      });
+      const materialText = materialGainText(gainedMaterials);
+      expeditionLog(`投递成功：${current.title}，+${formatNumber(current.stamps || 0)} 邮票、+${current.ink || 0} 墨点${materialText ? `、${materialText}` : ""}。`);
       if (current.kind === "boss") {
         finishExpedition(true);
       } else {
@@ -3949,6 +4136,13 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     const stamps = Math.floor(exp.loot.stamps * ratio);
     const ink = Math.floor(exp.loot.ink * ratio);
     const moon = success ? 1 : 0;
+    const materials = success ? { ...exp.loot.materials } : {};
+    if (success) {
+      Object.entries(materials).forEach(([id, quantity]) => {
+        if (!EXP_MATERIALS[id] || quantity <= 0) return;
+        state.materials[id] = Math.min(99, (state.materials[id] || 0) + quantity);
+      });
+    }
     const beforeWins = state.expeditionWins;
     addStamps(stamps);
     addInk(ink);
@@ -3968,6 +4162,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       stamps,
       ink,
       moon,
+      materials,
       rewards: expeditionRewardChoices(success),
       rewardPicked: null,
       rewardName: "",
@@ -3990,11 +4185,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
   }
 
   function restartExpedition() {
-    state.expedition = null;
-    if (!startExpedition()) return;
-    expSelection = [];
-    expConfirmAbandon = false;
-    renderExpedition();
+    openExpeditionPrep();
   }
 
   function abandonExpedition() {
@@ -5762,6 +5953,10 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       if (card) { toggleExpeditionCard(Number(card.dataset.expCard)); return; }
       const pick = event.target.closest("[data-exp-pick-card]");
       if (pick) { chooseExpeditionCard(Number(pick.dataset.expPickCard)); return; }
+      const prepToggle = event.target.closest("[data-prep-toggle]");
+      if (prepToggle) { toggleExpeditionPrep(prepToggle.dataset.prepToggle); return; }
+      if (event.target.closest("[data-prep-start]")) { startExpeditionWithPrep(false); return; }
+      if (event.target.closest("[data-prep-skip]")) { startExpeditionWithPrep(true); return; }
       if (event.target.closest("[data-exp-resolve]") || event.target.closest("[data-exp-resolve-empty]")) {
         resolveExpedition();
         return;
