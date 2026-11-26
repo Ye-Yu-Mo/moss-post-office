@@ -358,9 +358,17 @@ async fn social_square_postcards_and_bots() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     let cards = json_body(response).await;
-    let welcome = cards["cards"].as_array().unwrap().first().unwrap();
+    let cards = cards["cards"].as_array().unwrap();
+    let welcome = cards
+        .iter()
+        .find(|card| card["template"] == "welcome")
+        .unwrap();
     assert_eq!(welcome["sender_kind"], "bot");
     assert_eq!(welcome["gift_kind"], "ink");
+    assert!(cards.iter().any(|card| card["template"]
+        .as_str()
+        .unwrap_or("")
+        .starts_with("daily_")));
     let welcome_id = welcome["id"].as_i64().unwrap();
 
     let response = app
@@ -524,6 +532,30 @@ async fn friend_code_request_accept_profile_and_remove() {
 
     let response = app
         .clone()
+        .oneshot(post_json(
+            alice_token,
+            &format!("/v1/friends/{bob_id}/visit"),
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(json_body(response).await["first_today"], true);
+
+    let response = app
+        .clone()
+        .oneshot(post_json(
+            alice_token,
+            &format!("/v1/friends/{bob_id}/visit"),
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(json_body(response).await["first_today"], false);
+
+    let response = app
+        .clone()
         .oneshot(auth_request(
             "GET",
             &format!("/v1/friends/{bob_id}"),
@@ -534,6 +566,7 @@ async fn friend_code_request_accept_profile_and_remove() {
     assert_eq!(response.status(), StatusCode::OK);
     let profile = json_body(response).await;
     assert_eq!(profile["friend"]["username"], "friend_bob");
+    assert_eq!(profile["visits_received"], 1);
 
     let response = app
         .clone()
@@ -541,6 +574,17 @@ async fn friend_code_request_accept_profile_and_remove() {
             "GET",
             &format!("/v1/friends/{bob_id}"),
             carol_token,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    let response = app
+        .clone()
+        .oneshot(post_json(
+            carol_token,
+            &format!("/v1/friends/{bob_id}/visit"),
+            json!({}),
         ))
         .await
         .unwrap();

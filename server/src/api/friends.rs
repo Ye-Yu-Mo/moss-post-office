@@ -131,6 +131,26 @@ pub async fn remove_friend(
     Ok(Json(json!({ "ok": true })))
 }
 
+pub async fn visit_friend(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(friend_id): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    let context = require_user(&state, &headers).await?;
+    if !state
+        .db
+        .are_friends(context.user.id.clone(), friend_id.clone())
+        .await?
+    {
+        return Err(ApiError::NotFound("friend"));
+    }
+    let first_today = state
+        .db
+        .visit_friend(context.user.id, friend_id, now())
+        .await?;
+    Ok(Json(json!({ "ok": true, "first_today": first_today })))
+}
+
 pub async fn friend_profile(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,

@@ -26,6 +26,10 @@ const USER_TEMPLATES: &[(&str, &str)] = &[
 const BOT_TEMPLATES: &[(&str, &str)] = &[
     ("welcome", "欢迎来镇口。以后有信，可以往我这边寄。"),
     ("reply", "收到你的明信片了。回你一张，路上小心。"),
+    ("daily_0", "今天的雾很轻。替你走过镇口，把灯留着了。"),
+    ("daily_1", "星港的夜班车没有晚点，顺路带了一张邮票给你。"),
+    ("daily_2", "湖面很安静，邮袋里多了一封没有署名的信。"),
+    ("daily_3", "雨停了，屋檐下还滴着水。今天的信都送到了。"),
 ];
 
 fn template_text(id: &str) -> Option<&'static str> {
@@ -134,6 +138,10 @@ pub async fn postcards(
     state
         .db
         .ensure_welcome_postcard(context.user.id.clone(), created_at)
+        .await?;
+    state
+        .db
+        .ensure_daily_postcard(context.user.id.clone(), created_at)
         .await?;
     let cards = state
         .db

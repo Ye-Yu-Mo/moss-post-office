@@ -203,6 +203,14 @@ export async function removeFriend(account, friendId) {
   });
 }
 
+export async function visitFriend(account, friendId) {
+  return request(account.base, `/v1/friends/${encodeURIComponent(friendId)}/visit`, {
+    method: "POST",
+    token: account.token,
+    body: {}
+  });
+}
+
 export async function friendProfile(account, friendId) {
   return request(account.base, `/v1/friends/${encodeURIComponent(friendId)}`, {
     token: account.token

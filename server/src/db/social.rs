@@ -315,6 +315,59 @@ impl Db {
         .await
     }
 
+    /// Inserts at most one daily NPC letter per UTC day.
+    pub async fn ensure_daily_postcard(&self, user_id: String, now: i64) -> Result<(), ApiError> {
+        self.call(move |conn| {
+            let day_start = now - now % 86_400;
+            let count: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM postcards
+                 WHERE recipient_id = ?1 AND sender_kind = 'bot'
+                   AND template LIKE 'daily_%' AND created_at >= ?2",
+                params![user_id, day_start],
+                |row| row.get(0),
+            )?;
+            if count > 0 {
+                return Ok(());
+            }
+            let mut statement = conn.prepare("SELECT id, name FROM bots ORDER BY id")?;
+            let rows = statement.query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?;
+            let bots = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+            if bots.is_empty() {
+                return Ok(());
+            }
+            let day = now / 86_400;
+            let index = hash_text(&format!("{user_id}:{day}")) as usize % bots.len();
+            let (bot_id, bot_name) = &bots[index];
+            let (gift_kind, gift_amount) = if day % 3 == 0 {
+                ("paper".to_string(), 1)
+            } else if day % 3 == 1 {
+                ("wax".to_string(), 1)
+            } else {
+                ("ink".to_string(), 1)
+            };
+            let template = format!("daily_{}", day % 4);
+            conn.execute(
+                "INSERT INTO postcards
+                 (sender_id, sender_name, sender_kind, recipient_id, template,
+                  gift_kind, gift_amount, created_at, arrives_at, claimed_at)
+                 VALUES (?1, ?2, 'bot', ?3, ?4, ?5, ?6, ?7, ?7, NULL)",
+                params![
+                    bot_id,
+                    bot_name,
+                    user_id,
+                    template,
+                    gift_kind,
+                    gift_amount,
+                    now
+                ],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
     pub async fn claim_postcard(
         &self,
         user_id: String,

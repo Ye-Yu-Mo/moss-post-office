@@ -44,6 +44,7 @@ pub fn router() -> Router<Arc<AppState>> {
             "/v1/friends/{id}",
             get(friends::friend_profile).delete(friends::remove_friend),
         )
+        .route("/v1/friends/{id}/visit", post(friends::visit_friend))
 }
 
 pub(crate) fn public_stats(payload: &serde_json::Value) -> (i64, i64) {

@@ -213,6 +213,13 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     { id: "b_boat", name: "雾湖船夫", title: "摆渡人" }
   ];
 
+  const TOWN_SETS = [
+    { id: "town", name: "镇口", bots: ["b_moss", "b_box"], rewardMaterial: "cloth" },
+    { id: "starport", name: "星港", bots: ["b_night", "b_star"], rewardMaterial: "paper" },
+    { id: "mistlake", name: "雾湖", bots: ["b_boat", "b_snail"], rewardMaterial: "wax" },
+    { id: "rain", name: "雨夜", bots: ["b_plane", "b_mushroom"], rewardMaterial: "cloth" }
+  ];
+
   const WEATHER_DURATION = 150000;
   const WEATHERS = [
     {
@@ -1145,7 +1152,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
 
   function createInitialState(sound = true) {
     return {
-      version: 8,
+      version: 9,
       stamps: 0,
       runEarned: 0,
       totalEarned: 0,
@@ -1171,6 +1178,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       materials: { paper: 0, wax: 0, cloth: 0 },
       materialUpgrades: [],
       postcardAlbum: [],
+      postcardSetRewards: [],
       postcardAlbumReward: false,
       gens: Object.fromEntries(GENERATORS.map((gen) => [gen.id, 0])),
       boughtTotal: Object.fromEntries(GENERATORS.map((gen) => [gen.id, 0])),
@@ -1261,6 +1269,9 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
           seenPostcards.add(entry.senderId);
           return true;
         }).slice(0, TOWN_BOTS.length)
+      : [];
+    clean.postcardSetRewards = Array.isArray(raw.postcardSetRewards)
+      ? [...new Set(raw.postcardSetRewards)].filter((id) => TOWN_SETS.some((set) => set.id === id))
       : [];
     clean.postcardAlbumReward = Boolean(raw.postcardAlbumReward);
     clean.expedition = normalizeExpedition(raw.expedition);
@@ -2350,21 +2361,36 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
           <span>镇口明信片</span>
           <span>${state.postcardAlbum.length} / ${TOWN_BOTS.length}${state.postcardAlbumReward ? " · 已集齐" : ""}</span>
         </div>
-        <p class="tree-note">给镇上的 8 位邮差各寄一张。收齐后会留下 1 枚月光邮戳和一小包材料。</p>
-        <div class="postcard-grid">
-          ${TOWN_BOTS.map((bot) => {
-            const entry = state.postcardAlbum.find((item) => item.senderId === bot.id);
-            return `
-              <article class="postcard-slot${entry ? " is-collected" : ""}">
-                <div class="postcard-slot-top">
-                  <b>${bot.name}</b>
-                  <span>${bot.title}</span>
-                </div>
-                <p>${entry ? escapeHtml(entry.text || "已经收进邮册。") : "还没收到这位邮差的明信片。"}</p>
-                <small>${entry ? "已收进邮册" : "去镇口寄一张"}</small>
-              </article>`;
-          }).join("")}
-        </div>
+        <p class="tree-note">四套明信片，每套 2 位邮差。集齐一套 +1 墨点 +1 材料；8 张全收集再留 1 枚月光邮戳。</p>
+        ${TOWN_SETS.map((set) => {
+          const entries = set.bots.map((botId) =>
+            state.postcardAlbum.find((item) => item.senderId === botId)
+          );
+          const count = entries.filter(Boolean).length;
+          const rewarded = state.postcardSetRewards.includes(set.id);
+          return `
+            <div class="postcard-set${count === set.bots.length ? " is-complete" : ""}">
+              <div class="postcard-set-head">
+                <b>${set.name}</b>
+                <span>${count} / ${set.bots.length}${rewarded ? " · 已领" : count === set.bots.length ? " · 已集齐" : ""}</span>
+              </div>
+              <div class="postcard-grid">
+                ${set.bots.map((botId, index) => {
+                  const bot = TOWN_BOTS.find((candidate) => candidate.id === botId);
+                  const entry = entries[index];
+                  return `
+                    <article class="postcard-slot${entry ? " is-collected" : ""}">
+                      <div class="postcard-slot-top">
+                        <b>${bot ? bot.name : botId}</b>
+                        <span>${bot ? bot.title : ""}</span>
+                      </div>
+                      <p>${entry ? escapeHtml(entry.text || "已经收进邮册。") : "还没收到这位邮差的明信片。"}</p>
+                      <small>${entry ? "已收进邮册" : "去镇口寄一张"}</small>
+                    </article>`;
+                }).join("")}
+              </div>
+            </div>`;
+        }).join("")}
       </section>
     `;
 
@@ -6024,7 +6050,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       els.townBtn.classList.toggle("has-mail", townUnread > 0);
       els.townBtn.setAttribute(
         "aria-label",
-        townUnread > 0 ? `镇口，有 ${townUnread} 封没拆的明信片` : "镇口"
+        townUnread > 0 ? `镇口，有 ${townUnread} 条新消息` : "镇口"
       );
     }
   }
@@ -6107,6 +6133,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
                 <div class="friend-actions">
                   <button class="link-btn" type="button" data-send-postcard="${escapeHtml(friend.id)}" data-send-kind="user" data-send-name="${escapeHtml(friend.username)}">寄明信片</button>
                   <button class="link-btn" type="button" data-friend-profile="${escapeHtml(friend.id)}">串门</button>
+                  <button class="link-btn" type="button" data-visit-friend="${escapeHtml(friend.id)}">留邮戳</button>
                   <button class="link-btn" type="button" data-remove-friend="${escapeHtml(friend.id)}">删除</button>
                 </div>
               </div>`).join("")}</div>`
@@ -6314,6 +6341,21 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     }
   }
 
+  async function visitFriendById(id) {
+    if (!account || !account.token) return;
+    try {
+      const result = await cloudApi.visitFriend(account, id);
+      if (result && result.first_today) {
+        showToast("留了一枚访客邮戳。", 2800);
+      } else {
+        showToast("今天已经来过这位朋友家了。", 2800);
+      }
+      await loadTown();
+    } catch (error) {
+      showToast(cloudErrorMessage(error), 3600);
+    }
+  }
+
   async function removeFriendById(id) {
     if (!account || !account.token) return;
     try {
@@ -6346,11 +6388,13 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
               <span><b>${formatNumber(friend.total_stamps || 0)}</b> 邮票</span>
               <span><b>${formatNumber(friend.expedition_wins || 0)}</b> 趟远行</span>
               <span><b>${formatNumber(profile.postcards_received || 0)}</b> 张明信片</span>
+              <span><b>${formatNumber(profile.visits_received || 0)}</b> 枚访客邮戳</span>
             </div>
             <p class="town-lead">最后活跃：${townTime(friend.last_active || 0)}。</p>
           </div>
           <div class="exp-result-actions">
             <button class="exp-primary" type="button" data-send-postcard="${escapeHtml(friend.id || id)}" data-send-kind="user" data-send-name="${escapeHtml(friend.username || "好友")}">寄明信片</button>
+            <button class="exp-secondary" type="button" data-visit-friend="${escapeHtml(friend.id || id)}">留一枚访客邮戳</button>
             <button class="exp-secondary" type="button" data-friend-back>回镇口</button>
           </div>
         </div>`;
@@ -6411,12 +6455,14 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
   }
 
   function addPostcardToAlbum(card) {
-    if (!card || card.sender_kind !== "bot") return { added: false, completed: false };
+    if (!card || card.sender_kind !== "bot") {
+      return { added: false, completed: false, sets: [] };
+    }
     if (!TOWN_BOTS.some((bot) => bot.id === card.sender_id)) {
-      return { added: false, completed: false };
+      return { added: false, completed: false, sets: [] };
     }
     if (state.postcardAlbum.some((entry) => entry.senderId === card.sender_id)) {
-      return { added: false, completed: false };
+      return { added: false, completed: false, sets: [] };
     }
     state.postcardAlbum.push({
       senderId: card.sender_id,
@@ -6424,6 +6470,21 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       template: card.template,
       text: card.text,
       at: Date.now()
+    });
+    const completedSets = [];
+    TOWN_SETS.forEach((set) => {
+      if (state.postcardSetRewards.includes(set.id)) return;
+      const done = set.bots.every((botId) =>
+        state.postcardAlbum.some((entry) => entry.senderId === botId)
+      );
+      if (!done) return;
+      state.postcardSetRewards.push(set.id);
+      addInk(1);
+      state.materials[set.rewardMaterial] = Math.min(
+        99,
+        (state.materials[set.rewardMaterial] || 0) + 1
+      );
+      completedSets.push(set);
     });
     const complete = TOWN_BOTS.every((bot) =>
       state.postcardAlbum.some((entry) => entry.senderId === bot.id)
@@ -6434,9 +6495,9 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       Object.keys(EXP_MATERIALS).forEach((id) => {
         state.materials[id] = Math.min(99, (state.materials[id] || 0) + 2);
       });
-      return { added: true, completed: true };
+      return { added: true, completed: true, sets: completedSets };
     }
-    return { added: true, completed: false };
+    return { added: true, completed: false, sets: completedSets };
   }
 
   async function claimTownPostcard(id) {
@@ -6457,6 +6518,9 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       refreshLive();
       if (album.completed) {
         showToast("集齐 8 位邮差的明信片：+1 月光邮戳，纸 / 蜡 / 布各 +2。", 6200);
+      } else if (album.sets && album.sets.length) {
+        const names = album.sets.map((set) => `「${set.name}」`).join("");
+        showToast(`${names}明信片集齐：+1 墨点，材料 +1。`, 5200);
       } else {
         showToast(
           `收下了 ${giftLabel(kind, amount)}${album.added ? "，明信片收进了邮册" : ""}。`,
@@ -6714,6 +6778,11 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       const removeFriend = event.target.closest("[data-remove-friend]");
       if (removeFriend) {
         removeFriendById(removeFriend.dataset.removeFriend);
+        return;
+      }
+      const visitFriend = event.target.closest("[data-visit-friend]");
+      if (visitFriend) {
+        visitFriendById(visitFriend.dataset.visitFriend);
         return;
       }
       const friendProfile = event.target.closest("[data-friend-profile]");

@@ -166,11 +166,13 @@ curl -sS -X POST http://127.0.0.1:17322/v1/events \
 - 好友档案只对好友开放：用户名、好友码、邮票、远行胜场、最后活跃、收到的明信片数；非好友返回 404。
 - 删除好友会同时删除双向关系；不删除任何存档或明信片。
 - 好友明信片复用现有 `/v1/postcards`，每天 5 张上限、预设模板、真人之间不带资源礼物。
+- 串门：每位好友每天一次，写入 `friend_visits`，只计数，不掉资源。
+- NPC 每日来信：每个账号每天最多一封，按 UTC 日期选择 NPC 和模板。
 
 ## 数据与备份
 
-- 表：`users`、`sessions`、`login_challenges`、`saves`、`events`、`bots`、`postcards`、`postcard_sends`、`friend_requests`、`friendships`；SQLite WAL。
-- v1 的匿名表重命名为 `*_v1_legacy`；v2 的 Argon2 密码表重命名为 `*_v2_legacy`，都不会被静默删除。v4 给 `users` 增加公开统计列并创建社交表；v5 增加 `friend_code` 与好友关系表。
+- 表：`users`、`sessions`、`login_challenges`、`saves`、`events`、`bots`、`postcards`、`postcard_sends`、`friend_requests`、`friendships`、`friend_visits`；SQLite WAL。
+- v1 的匿名表重命名为 `*_v1_legacy`；v2 的 Argon2 密码表重命名为 `*_v2_legacy`，都不会被静默删除。v4 给 `users` 增加公开统计列并创建社交表；v5 增加 `friend_code` 与好友关系表；v6 增加 `friend_visits`。
 - `verifier` 是 256 位派生值；它等价于本站的登录密钥，数据库泄露仍会导致账号被冒用，请限制 DB 访问并备份加密。
 - 备份：`sqlite3 data/moss.db ".backup 'backup.db'"`，或停服务后连同 `-wal/-shm` 一起复制。
 - 事件表会持续增长；上线后按周归档或保留 90 天。

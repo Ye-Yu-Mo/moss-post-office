@@ -27,6 +27,7 @@ pub struct FriendRequestView {
 pub struct FriendProfile {
     pub friend: FriendSummary,
     pub postcards_received: i64,
+    pub visits_received: i64,
 }
 
 pub enum FriendRequestOutcome {
@@ -258,6 +259,24 @@ impl Db {
         .await
     }
 
+    /// Returns true when this is the first visit to this friend today.
+    pub async fn visit_friend(
+        &self,
+        visitor_id: String,
+        friend_id: String,
+        now: i64,
+    ) -> Result<bool, ApiError> {
+        self.call(move |conn| {
+            let inserted = conn.execute(
+                "INSERT OR IGNORE INTO friend_visits (visitor_id, friend_id, day, created_at)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![visitor_id, friend_id, now / 86_400, now],
+            )?;
+            Ok(inserted > 0)
+        })
+        .await
+    }
+
     pub async fn remove_friend(
         &self,
         user_id: String,
@@ -314,9 +333,15 @@ impl Db {
                 [&friend_id],
                 |row| row.get(0),
             )?;
+            let visits_received: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM friend_visits WHERE friend_id = ?1",
+                [&friend_id],
+                |row| row.get(0),
+            )?;
             Ok(Some(FriendProfile {
                 friend,
                 postcards_received,
+                visits_received,
             }))
         })
         .await

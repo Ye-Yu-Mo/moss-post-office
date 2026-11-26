@@ -1,6 +1,6 @@
 use rusqlite::Connection;
 
-pub(super) const SCHEMA_VERSION: i64 = 5;
+pub(super) const SCHEMA_VERSION: i64 = 6;
 
 const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -78,6 +78,17 @@ CREATE TABLE IF NOT EXISTS friendships (
 
 CREATE INDEX IF NOT EXISTS idx_friendships_user
     ON friendships (user_id, friend_id);
+
+CREATE TABLE IF NOT EXISTS friend_visits (
+    visitor_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    friend_id  TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    day        INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (visitor_id, friend_id, day)
+);
+
+CREATE INDEX IF NOT EXISTS idx_friend_visits_friend
+    ON friend_visits (friend_id, day);
 
 CREATE TABLE IF NOT EXISTS bots (
     id            TEXT PRIMARY KEY,
