@@ -2,6 +2,8 @@
 
 一个 2D 的放置 + 卡牌 roguelike 小游戏：白天在邮局盖戳、送信、经营邮路，夜里带一副邮差牌穿过雾湖。
 
+![苔藓邮局](docs/screenshot.webp)
+
 - 前端：Vite + 原生 DOM/CSS + PixiJS 环境粒子（`web/`）
 - 后端：Rust + axum + SQLite，只做账号、云存档和事件（`server/`）
 - 玩法离线优先：断网也能玩，登录后可选云同步
