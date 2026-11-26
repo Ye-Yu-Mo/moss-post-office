@@ -159,6 +159,15 @@ curl -sS -X POST http://127.0.0.1:17322/v1/events \
 - 重新部署：上传源码 → `cargo build --release --locked` → `cp target/release/moss-sync ./moss-sync` → `systemctl --user restart moss-sync`。
 - HTTP 下按上面的挑战应答运行；真正消除风险仍需 TLS。
 
+### 重置密码
+
+```bash
+cd /home/jas/games/moss-sync
+python3 scripts/reset_password.py --db data/moss.db --username BDD
+```
+
+脚本会先用 SQLite backup 备份数据库，再替换 verifier 并吊销该用户的全部会话；不会打印密码或 verifier。自动化可用 `--password-stdin`（密码从 stdin 读入，避免进 shell history）。
+
 ## 部署建议
 
 1. `cargo build --release`，把二进制和 systemd unit 放到服务器。
