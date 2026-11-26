@@ -10,12 +10,16 @@ use serde_json::json;
 pub enum ApiError {
     #[error("unauthorized")]
     Unauthorized,
+    #[error("invalid username or password")]
+    InvalidCredentials,
     #[error("bad request: {0}")]
     BadRequest(&'static str),
     #[error("not found: {0}")]
     NotFound(&'static str),
     #[error("conflict at revision {0}")]
     Conflict(u64),
+    #[error("username already taken")]
+    UsernameTaken,
     #[error("payload too large")]
     TooLarge,
     #[error("internal error: {0}")]
@@ -31,6 +35,12 @@ impl IntoResponse for ApiError {
                 "missing or invalid token",
                 None,
             ),
+            ApiError::InvalidCredentials => (
+                StatusCode::UNAUTHORIZED,
+                "invalid_credentials",
+                "invalid username or password",
+                None,
+            ),
             ApiError::BadRequest(message) => {
                 (StatusCode::BAD_REQUEST, "bad_request", message, None)
             }
@@ -40,6 +50,12 @@ impl IntoResponse for ApiError {
                 "conflict",
                 "save revision mismatch",
                 Some(revision),
+            ),
+            ApiError::UsernameTaken => (
+                StatusCode::CONFLICT,
+                "username_taken",
+                "username is already taken",
+                None,
             ),
             ApiError::TooLarge => (
                 StatusCode::PAYLOAD_TOO_LARGE,

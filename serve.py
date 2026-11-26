@@ -1,59 +1,25 @@
 #!/usr/bin/env python3
-"""Minimal production server for the Moss Post Office static game."""
+"""Serve the Vite build output (`dist/`) with a strict allowlist and CSP."""
 
 import gzip
 import hashlib
+import mimetypes
 import os
 import sys
-import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-INDEX_PATH = os.path.join(ROOT, "index.html")
-ASSETS = {
-    "/game.js": (
-        os.path.join(ROOT, "game.js"),
-        "application/javascript; charset=utf-8",
-        "no-cache",
-        True
-    ),
-    "/assets/pixi-7.4.2.min.js": (
-        os.path.join(ROOT, "assets", "pixi-7.4.2.min.js"),
-        "application/javascript; charset=utf-8",
-        "public, max-age=31536000, immutable",
-        True
-    ),
-    "/assets/pixi-unsafe-eval-7.4.2.min.js": (
-        os.path.join(ROOT, "assets", "pixi-unsafe-eval-7.4.2.min.js"),
-        "application/javascript; charset=utf-8",
-        "public, max-age=31536000, immutable",
-        True
-    ),
-    "/assets/scene-dusk.webp": (
-        os.path.join(ROOT, "assets", "scene-dusk.webp"),
-        "image/webp",
-        "public, max-age=31536000, immutable",
-        False
-    ),
-    "/assets/ui-icons.webp": (
-        os.path.join(ROOT, "assets", "ui-icons.webp"),
-        "image/webp",
-        "public, max-age=31536000, immutable",
-        False
-    ),
-    "/assets/moon-banner.webp": (
-        os.path.join(ROOT, "assets", "moon-banner.webp"),
-        "image/webp",
-        "public, max-age=31536000, immutable",
-        False
-    ),
-    "/assets/favicon.png": (
-        os.path.join(ROOT, "assets", "favicon.png"),
-        "image/png",
-        "public, max-age=604800",
-        False
-    )
+DIST = os.path.join(ROOT, "dist")
+INDEX_PATH = os.path.join(DIST, "index.html")
+
+COMPRESSIBLE = {
+    ".html": True,
+    ".js": True,
+    ".css": True,
+    ".json": True,
+    ".svg": True,
+    ".txt": True,
 }
 CSP = (
     "default-src 'self'; "
@@ -61,12 +27,53 @@ CSP = (
     "font-src 'self' data: https://fonts.gstatic.com; "
     "script-src 'self' 'unsafe-inline'; "
     "img-src 'self' data:; "
-    "connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com; "
+    "connect-src 'self' https: http://127.0.0.1:17322 http://47.92.150.181:17322; "
     "object-src 'none'; "
     "base-uri 'none'; "
     "form-action 'none'; "
     "frame-ancestors 'none'"
 )
+
+
+def load_resource(path, route, index=False):
+    with open(path, "rb") as handle:
+        raw = handle.read()
+    extension = os.path.splitext(path)[1].lower()
+    compressible = COMPRESSIBLE.get(extension, False)
+    content_type = mimetypes.guess_type(path)[0] or "application/octet-stream"
+    if extension == ".js":
+        content_type = "application/javascript; charset=utf-8"
+    elif extension == ".css":
+        content_type = "text/css; charset=utf-8"
+    elif extension == ".html":
+        content_type = "text/html; charset=utf-8"
+    elif extension == ".webp":
+        content_type = "image/webp"
+    cache = "no-cache" if index else "public, max-age=31536000, immutable"
+    return {
+        "raw": raw,
+        "gzip": gzip.compress(raw, compresslevel=9, mtime=0) if compressible else raw,
+        "etag": '"' + hashlib.sha256(raw).hexdigest() + '"',
+        "mtime": int(os.path.getmtime(path)),
+        "content_type": content_type,
+        "cache_control": cache,
+        "compressible": compressible,
+    }
+
+
+def load_dist():
+    if not os.path.isfile(INDEX_PATH):
+        raise SystemExit("dist/index.html not found; run `npm run build` first")
+    index = load_resource(INDEX_PATH, "/", index=True)
+    resources = {}
+    for base, _dirs, files in os.walk(DIST):
+        for name in files:
+            path = os.path.join(base, name)
+            relative = os.path.relpath(path, DIST).replace(os.sep, "/")
+            if relative == "index.html":
+                continue
+            resources["/" + relative] = load_resource(path, "/" + relative)
+    return index, resources
 
 
 class GameServer(ThreadingHTTPServer):
@@ -75,27 +82,7 @@ class GameServer(ThreadingHTTPServer):
 
     def __init__(self, address, handler):
         super().__init__(address, handler)
-        self.index = self._load_file(
-            INDEX_PATH, "text/html; charset=utf-8", "no-cache"
-        )
-        self.assets = {
-            route: self._load_file(path, content_type, cache_control, compressible)
-            for route, (path, content_type, cache_control, compressible) in ASSETS.items()
-        }
-
-    @staticmethod
-    def _load_file(path, content_type, cache_control, compressible=True):
-        with open(path, "rb") as handle:
-            raw = handle.read()
-        return {
-            "raw": raw,
-            "gzip": gzip.compress(raw, compresslevel=9, mtime=0) if compressible else raw,
-            "etag": '"' + hashlib.sha256(raw).hexdigest() + '"',
-            "mtime": int(os.path.getmtime(path)),
-            "content_type": content_type,
-            "cache_control": cache_control,
-            "compressible": compressible
-        }
+        self.index, self.resources = load_dist()
 
 
 class GameHandler(BaseHTTPRequestHandler):
@@ -115,7 +102,7 @@ class GameHandler(BaseHTTPRequestHandler):
         path = urlsplit(self.path).path
         if path in ("/", "/index.html"):
             return self.server.index
-        return self.server.assets.get(path)
+        return self.server.resources.get(path)
 
     def _serve_resource(self, head_only=False):
         resource = self._resource()
@@ -157,8 +144,8 @@ class GameHandler(BaseHTTPRequestHandler):
 
     def log_message(self, format_string, *args):
         print(
-            f'{self.address_string()} - - [{self.log_date_time_string()}] '
-            f'{format_string % args}',
+            f"{self.address_string()} - - [{self.log_date_time_string()}] "
+            f"{format_string % args}",
             flush=True,
         )
 
@@ -169,7 +156,7 @@ def main():
     server = GameServer((bind, port), GameHandler)
     print(
         f"Moss Post Office listening on http://{bind}:{port} "
-        f"({len(server.index['raw'])} bytes, gzip {len(server.index['gzip'])})",
+        f"({len(server.index['raw'])} bytes index, {len(server.resources)} assets)",
         flush=True,
     )
     try:

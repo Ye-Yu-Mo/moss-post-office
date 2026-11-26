@@ -6,6 +6,7 @@ description = "Thin sync + telemetry service for Moss Post Office"
 license = "MIT"
 
 [dependencies]
+argon2 = "0.5"
 axum = "0.8"
 base64 = "0.22"
 rand = "0.8"

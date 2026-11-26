@@ -1,3 +1,5 @@
+import * as cloudApi from "./cloud.js";
+
 (() => {
   "use strict";
 
@@ -619,7 +621,7 @@
     }
   ];
 
-  const MOON_BRANCHES = { busy: "忙碌", journey: "远行", vigil: "守夜" };
+  const MOON_BRANCHES = { busy: "忙碌", journey: "远行", vigil: "守夜", pack: "行囊" };
 
   const MOON_NODES = [
     { id: "busy1", branch: "busy", name: "手心的温度", desc: "完美判定范围 +30%", cost: 1 },
@@ -630,7 +632,10 @@
     { id: "journey3", branch: "journey", name: "回车铃", desc: "完成的邮路自动领回", cost: 3, requires: "journey2" },
     { id: "vigil1", branch: "vigil", name: "留一盏灯", desc: "离线收益 50% → 65%", cost: 1 },
     { id: "vigil2", branch: "vigil", name: "信件归档", desc: "柜台订单位 +1", cost: 2, requires: "vigil1" },
-    { id: "vigil3", branch: "vigil", name: "长夜", desc: "离线上限 2 → 4 小时，订单时限 +25%", cost: 3, requires: "vigil2" }
+    { id: "vigil3", branch: "vigil", name: "长夜", desc: "离线上限 2 → 4 小时，订单时限 +25%", cost: 3, requires: "vigil2" },
+    { id: "pack1", branch: "pack", name: "远行背囊", desc: "远行开局干粮 +1", cost: 1 },
+    { id: "pack2", branch: "pack", name: "备用信封", desc: "信件上限 +1，开局带 4 封", cost: 2, requires: "pack1" },
+    { id: "pack3", branch: "pack", name: "路口的地图", desc: "远行开局多 1 张随机牌", cost: 3, requires: "pack2" }
   ];
 
   const CONTRACTS = [
@@ -824,7 +829,11 @@
     breeze: { name: "借风", tag: "wind", power: 1, desc: "逆风 +3" },
     stamp: { name: "邮戳", tag: "any", power: 2, desc: "任何路况 +2" },
     detour: { name: "绕路", tag: "any", power: 0, desc: "跳过路障，耗 1 干粮", supplyCost: 1, skip: true },
-    shield: { name: "护信", tag: "any", power: 0, desc: "这次失败不掉信", shield: true }
+    shield: { name: "护信", tag: "any", power: 0, desc: "这次失败不掉信", shield: true },
+    oilpaper: { name: "油纸", tag: "rain", power: 3, desc: "雨天 +5 通行", unlockWins: 1 },
+    compass: { name: "罗盘", tag: "road", power: 2, desc: "道路 +4 通行", unlockWins: 2 },
+    thermos: { name: "热水壶", tag: "any", power: 0, desc: "回复 1 封信", heal: 1, unlockWins: 3 },
+    seal: { name: "火漆", tag: "any", power: 3, desc: "任何路况 +3 通行", unlockWins: 5 }
   };
 
   const EXP_STARTER = [
@@ -836,14 +845,18 @@
     "shield", "shield"
   ];
 
+  const EXP_RELICS = {
+    watch: { name: "旧怀表", desc: "匹配路况的牌额外 +1 通行" },
+    spare_bag: { name: "备用邮袋", desc: "每趟开局多 2 份干粮" },
+    wax: { name: "蜡封", desc: "每趟第一次失败不掉信" }
+  };
+
   const EXP_HAZARDS = [
     { tag: "rain", title: "雨夜", desc: "雨把路泡软了，信纸开始发潮。", need: 3 },
     { tag: "road", title: "断桥", desc: "桥面塌了一半，邮车过不去。", need: 3 },
     { tag: "night", title: "没有灯的路", desc: "月亮被云遮住，路标看不见了。", need: 4 },
     { tag: "wind", title: "逆风", desc: "风从湖面卷过来，纸飞机飞不动。", need: 3 }
   ];
-
-  const EXP_CARD_POOL = ["umbrella", "ride", "lantern", "breeze", "stamp", "detour", "shield"];
 
   const EXP_EVENTS = [
     {
@@ -938,6 +951,8 @@
     soundLabel: document.getElementById("soundLabel"),
     helpBtn: document.getElementById("helpBtn"),
     resetBtn: document.getElementById("resetBtn"),
+    accountBtn: document.getElementById("accountBtn"),
+    accountLabel: document.getElementById("accountLabel"),
     saveNote: document.getElementById("saveNote"),
     dayLabel: document.getElementById("dayLabel"),
     toast: document.getElementById("toast"),
@@ -971,6 +986,12 @@
   let lastEventId = "";
   let expSelection = [];
   let expConfirmAbandon = false;
+  let account = null;
+  let accountMode = "login";
+  let accountBaseDraft = cloudApi.defaultBase();
+  let cloudPushTimer = 0;
+  let cloudPushing = false;
+  let suppressSaves = false;
   let lastFrame = performance.now();
   let lastUiAt = 0;
   let lastGoalAt = 0;
@@ -1001,7 +1022,7 @@
 
   function createInitialState(sound = true) {
     return {
-      version: 5,
+      version: 6,
       stamps: 0,
       runEarned: 0,
       totalEarned: 0,
@@ -1022,6 +1043,8 @@
       accepted: [],
       expedition: null,
       expeditionWins: 0,
+      expeditionDeck: [...EXP_STARTER],
+      expeditionRelics: [],
       gens: Object.fromEntries(GENERATORS.map((gen) => [gen.id, 0])),
       boughtTotal: Object.fromEntries(GENERATORS.map((gen) => [gen.id, 0])),
       upgrades: [],
@@ -1083,6 +1106,16 @@
       .reduce((max, order) => Math.max(max, order.id), 0);
     clean.nextOrderId = Math.max(Math.floor(numberOr(raw.nextOrderId, maxOrderId + 1)), maxOrderId + 1);
     clean.expeditionWins = Math.floor(numberOr(raw.expeditionWins));
+    const deck = Array.isArray(raw.expeditionDeck) ? raw.expeditionDeck : EXP_STARTER;
+    clean.expeditionDeck = deck
+      .filter((id) => EXP_CARDS[id] && expeditionCardUnlocked(id, clean.expeditionWins))
+      .slice(0, 30);
+    if (!clean.expeditionDeck.length) clean.expeditionDeck = [...EXP_STARTER];
+    clean.expeditionRelics = Array.isArray(raw.expeditionRelics)
+      ? [...new Set(raw.expeditionRelics)]
+          .filter((id) => EXP_RELICS[id])
+          .slice(0, 3)
+      : [];
     clean.expedition = normalizeExpedition(raw.expedition);
     clean.bellActiveUntil = numberOr(raw.bellActiveUntil);
     clean.bellReadyAt = numberOr(raw.bellReadyAt);
@@ -2996,6 +3029,54 @@
     return state.totalEarned >= 700 || state.expeditionWins > 0;
   }
 
+  function expeditionCardUnlocked(id, wins) {
+    const card = EXP_CARDS[id];
+    const threshold = wins === undefined ? (state ? state.expeditionWins : 0) : wins;
+    return Boolean(card) && (card.unlockWins || 0) <= threshold;
+  }
+
+  function expeditionUnlockedCardPool(wins) {
+    const threshold = wins === undefined ? (state ? state.expeditionWins : 0) : wins;
+    return Object.keys(EXP_CARDS).filter((id) => expeditionCardUnlocked(id, threshold));
+  }
+
+  function expeditionRandomUnlockedCard() {
+    const pool = expeditionUnlockedCardPool();
+    return pool[Math.floor(Math.random() * pool.length)] || "stamp";
+  }
+
+  function hasRelic(id) {
+    return Boolean(
+      state && Array.isArray(state.expeditionRelics) && state.expeditionRelics.includes(id)
+    );
+  }
+
+  function expeditionMaxLetters() {
+    return 3 + (hasNode("pack2") ? 1 : 0);
+  }
+
+  function nextExpeditionUnlock() {
+    const wins = state ? state.expeditionWins : 0;
+    return (
+      Object.entries(EXP_CARDS)
+        .map(([id, card]) => ({ id, ...card }))
+        .filter((card) => (card.unlockWins || 0) > wins)
+        .sort((a, b) => (a.unlockWins || 0) - (b.unlockWins || 0))[0] || null
+    );
+  }
+
+  function expeditionSpendLetter(reason) {
+    const exp = state.expedition;
+    if (!exp) return;
+    if (hasRelic("wax") && !exp.waxUsed) {
+      exp.waxUsed = true;
+      expeditionLog("蜡封裂开一点，替你保住了一封信。");
+      return;
+    }
+    exp.letters -= 1;
+    expeditionLog(reason);
+  }
+
   function expeditionShuffle(list) {
     const copy = [...list];
     for (let index = copy.length - 1; index > 0; index -= 1) {
@@ -3012,7 +3093,7 @@
     const exp = {
       active: !raw.result,
       stage: Math.min(6, Math.max(1, Math.floor(numberOr(raw.stage, 1)))),
-      letters: Math.min(3, Math.floor(numberOr(raw.letters, 3))),
+      letters: Math.min(4, Math.max(1, Math.floor(numberOr(raw.letters, 3)))),
       supplies: Math.min(9, Math.floor(numberOr(raw.supplies, 5))),
       deck: cards(raw.deck),
       discard: cards(raw.discard),
@@ -3093,12 +3174,18 @@
       return false;
     }
     if (state.expedition && !state.expedition.result) return false;
+    const startingDeck = state.expeditionDeck.length
+      ? [...state.expeditionDeck]
+      : [...EXP_STARTER];
+    if (hasNode("pack3")) startingDeck.push(expeditionRandomUnlockedCard());
+    const startingSupplies =
+      5 + (hasNode("pack1") ? 1 : 0) + (hasRelic("spare_bag") ? 2 : 0);
     state.expedition = {
       active: true,
       stage: 1,
-      letters: 3,
-      supplies: 5,
-      deck: expeditionShuffle(EXP_STARTER),
+      letters: expeditionMaxLetters(),
+      supplies: Math.min(9, startingSupplies),
+      deck: expeditionShuffle(startingDeck),
       discard: [],
       hand: [],
       loot: { stamps: 0, ink: 0 },
@@ -3107,6 +3194,7 @@
       options: [],
       current: null,
       result: null,
+      waxUsed: false,
       startedAt: Date.now()
     };
     state.expedition.options = expeditionOptions(1);
@@ -3152,7 +3240,7 @@
     const card = EXP_CARDS[cardId];
     if (!card) return 0;
     const match = current && card.tag !== "any" && card.tag === current.tag;
-    return card.power + (match ? 2 : 0);
+    return card.power + (match ? 2 + (hasRelic("watch") ? 1 : 0) : 0);
   }
 
   function expeditionSelectedPower() {
@@ -3178,19 +3266,27 @@
     const active = exp && !exp.result;
     const result = exp && exp.result;
     const label = result ? "查看结算" : active ? "继续远行" : "出发";
+    const nextUnlock = nextExpeditionUnlock();
+    const relicNames = state.expeditionRelics
+      .map((id) => EXP_RELICS[id] && EXP_RELICS[id].name)
+      .filter(Boolean);
     const note = !unlocked
       ? `累计 ${formatNumber(700)} 张邮票后，邮路会延伸到雾湖之外。`
       : active
         ? `第 ${exp.stage} 段 · 信件 ${exp.letters} · 干粮 ${exp.supplies}`
         : result
           ? "上一趟已经回来，看看带回了什么。"
-          : `带 3 封信和一副邮差牌，走一条会变的远路。${state.expeditionWins ? `已走完 ${state.expeditionWins} 趟。` : ""}`;
+          : `带 ${expeditionMaxLetters()} 封信和一副邮差牌，走一条会变的远路。${state.expeditionWins ? `已走完 ${state.expeditionWins} 趟。` : ""}`;
     return `
       <div class="expedition-entry${unlocked ? "" : " is-locked"}">
         <div>
           <span class="expedition-kicker">远行 · 随机邮路</span>
           <b>雾湖之外</b>
           <p>${note}</p>
+          <p class="expedition-meta">背囊 ${state.expeditionDeck.length} 张${relicNames.length ? ` · 遗物 ${relicNames.join("、")}` : ""}</p>
+          ${unlocked && !active && !result
+            ? `<p class="expedition-next">${nextUnlock ? `再赢 ${nextUnlock.unlockWins - state.expeditionWins} 趟解锁「${nextUnlock.name}」` : "邮差牌已全部解锁"}</p>`
+            : ""}
         </div>
         <button class="expedition-open" type="button" data-expedition-open ${unlocked ? "" : "disabled"}>${unlocked ? label : "未开通"}</button>
       </div>`;
@@ -3273,8 +3369,8 @@
         <h4>路边营地</h4>
         <p>火升起来了。你可以在天亮前做一件事。</p>
         <div class="exp-choices">
-          <button class="exp-choice" type="button" data-exp-camp="heal" ${exp.letters >= 3 ? "disabled" : ""}>
-            <b>补 1 封信</b><span>信件 ${exp.letters} / 3${exp.letters >= 3 ? " · 已经满了" : ""}</span>
+          <button class="exp-choice" type="button" data-exp-camp="heal" ${exp.letters >= expeditionMaxLetters() ? "disabled" : ""}>
+            <b>补 1 封信</b><span>信件 ${exp.letters} / ${expeditionMaxLetters()}${exp.letters >= expeditionMaxLetters() ? " · 已经满了" : ""}</span>
           </button>
           <button class="exp-choice" type="button" data-exp-camp="supply" ${exp.supplies >= 9 ? "disabled" : ""}>
             <b>补 2 份干粮</b><span>干粮 ${exp.supplies}${exp.supplies >= 9 ? " · 背不动了" : ""}</span>
@@ -3328,18 +3424,128 @@
       </div>`;
   }
 
+  function expeditionRewardCardId() {
+    const unlocked = expeditionUnlockedCardPool();
+    const advanced = unlocked.filter((id) => !EXP_STARTER.includes(id));
+    const pool = advanced.length ? advanced : unlocked;
+    if (!pool.length) return null;
+    const counts = {};
+    state.expeditionDeck.forEach((id) => {
+      counts[id] = (counts[id] || 0) + 1;
+    });
+    const min = Math.min(...pool.map((id) => counts[id] || 0));
+    const best = pool.filter((id) => (counts[id] || 0) === min);
+    return best[Math.floor(Math.random() * best.length)];
+  }
+
+  function expeditionRewardChoices(success) {
+    const rewards = [];
+    const rate = Math.max(1, (state.expedition && state.expedition.rate) || baseRate());
+    if (state.expeditionDeck.length < 30) {
+      const cardId = expeditionRewardCardId();
+      if (cardId) {
+        const card = EXP_CARDS[cardId];
+        rewards.push({ type: "card", id: cardId, name: card.name, desc: card.desc });
+      }
+    }
+    if (success) {
+      const relicId = Object.keys(EXP_RELICS).find(
+        (id) => !state.expeditionRelics.includes(id)
+      );
+      if (relicId) {
+        const relic = EXP_RELICS[relicId];
+        rewards.push({ type: "relic", id: relicId, name: relic.name, desc: relic.desc });
+      }
+      const stamps = Math.round(rate * 25 + 800);
+      rewards.push({
+        type: "supply",
+        id: "bundle",
+        name: "补给包",
+        desc: `+${formatNumber(stamps)} 邮票 · +8 墨点`,
+        stamps,
+        ink: 8
+      });
+    } else {
+      const stamps = Math.round(rate * 8 + 200);
+      rewards.push({
+        type: "supply",
+        id: "bundle",
+        name: "剩下的邮袋",
+        desc: `+${formatNumber(stamps)} 邮票 · +3 墨点`,
+        stamps,
+        ink: 3
+      });
+    }
+    return rewards.slice(0, 3);
+  }
+
+  function claimExpeditionReward(index) {
+    const exp = state.expedition;
+    const result = exp && exp.result;
+    if (!result || !Array.isArray(result.rewards)) return;
+    if (result.rewardPicked !== undefined && result.rewardPicked !== null) return;
+    const reward = result.rewards[index];
+    if (!reward) return;
+
+    if (reward.type === "card" && EXP_CARDS[reward.id]) {
+      if (state.expeditionDeck.length < 30) {
+        state.expeditionDeck.push(reward.id);
+      } else {
+        addStamps(1000);
+      }
+    } else if (reward.type === "relic" && EXP_RELICS[reward.id]) {
+      if (!state.expeditionRelics.includes(reward.id) && state.expeditionRelics.length < 3) {
+        state.expeditionRelics.push(reward.id);
+      }
+    } else if (reward.type === "supply") {
+      addStamps(reward.stamps || 0);
+      addInk(reward.ink || 0);
+    }
+
+    result.rewardPicked = index;
+    result.rewardName = reward.name;
+    saveGame();
+    refreshLive();
+    renderExpedition();
+  }
+
   function expeditionResultMarkup() {
     const result = state.expedition.result;
+    const rewards = Array.isArray(result.rewards) ? result.rewards : [];
+    const picked = result.rewardPicked !== undefined && result.rewardPicked !== null;
+    const unlocked = Array.isArray(result.unlocked) ? result.unlocked : [];
+    const relics = state.expeditionRelics
+      .map((id) => EXP_RELICS[id] && EXP_RELICS[id].name)
+      .filter(Boolean);
+    const rewardMarkup = rewards.length && !picked
+      ? `
+        <div class="exp-rewards">
+          <p class="exp-lead">选一样带回邮局</p>
+          <div class="exp-choices">
+            ${rewards.map((reward, index) => `
+              <button class="exp-choice exp-reward" type="button" data-exp-reward="${index}">
+                <b>${reward.name}</b>
+                <span>${reward.desc}</span>
+              </button>`).join("")}
+          </div>
+        </div>`
+      : "";
     return `
       <div class="exp-result ${result.success ? "is-win" : "is-lose"}">
         <span class="exp-tag">${result.success ? "抵达星港" : "信留在了路上"}</span>
         <h4>${result.success ? "最后一班星船赶上了" : "这一趟只能到这里"}</h4>
         <p>带回 ${formatNumber(result.stamps)} 张邮票、${formatNumber(result.ink)} 墨点${result.moon ? `、${result.moon} 枚月光邮戳` : ""}。</p>
         <p>${result.success ? "远行成功次数 +1。下一趟会遇到新的路。" : "失败只带回 30% 的邮袋；下一次会更好。"}</p>
-        <div class="exp-result-actions">
-          <button class="exp-primary" type="button" data-exp-restart>再来一趟</button>
-          <button class="exp-secondary" type="button" data-exp-finish>回到邮局</button>
-        </div>
+        ${unlocked.length ? `<p class="exp-unlock">新牌解锁：${unlocked.join("、")}</p>` : ""}
+        <p class="exp-meta">背囊 ${state.expeditionDeck.length} 张${relics.length ? ` · 遗物 ${relics.join("、")}` : ""}</p>
+        ${rewardMarkup}
+        ${picked ? `<p class="exp-reward-picked">已收下「${result.rewardName || "奖励"}」。</p>` : ""}
+        ${rewards.length && !picked
+          ? `<p class="exp-hint">先选一样，再决定下一趟。</p>`
+          : `<div class="exp-result-actions">
+              <button class="exp-primary" type="button" data-exp-restart>再来一趟</button>
+              <button class="exp-secondary" type="button" data-exp-finish>回到邮局</button>
+            </div>`}
       </div>`;
   }
 
@@ -3349,7 +3555,8 @@
     if (!exp.result && exp.current && (exp.current.kind === "hazard" || exp.current.kind === "boss") && !exp.hand.length) {
       expeditionDrawHand();
     }
-    const hearts = "♥".repeat(Math.max(0, exp.letters)) + "♡".repeat(Math.max(0, 3 - exp.letters));
+    const maxLetters = expeditionMaxLetters();
+    const hearts = "♥".repeat(Math.max(0, exp.letters)) + "♡".repeat(Math.max(0, maxLetters - exp.letters));
     let body = "";
     if (exp.result) body = expeditionResultMarkup();
     else if (!exp.current) body = expeditionOptionsMarkup();
@@ -3451,8 +3658,7 @@
       exp.supplies -= 1;
       expeditionLog(`往${option.title}走，路上吃掉 1 份干粮。`);
     } else {
-      exp.letters -= 1;
-      expeditionLog("干粮袋空了，你饿着走了一段路，丢了一封信。");
+      expeditionSpendLetter("干粮袋空了，你饿着走了一段路，丢了一封信。");
     }
     if (exp.letters <= 0) {
       finishExpedition(false);
@@ -3490,8 +3696,7 @@
     const exp = state.expedition;
     if (!exp || !exp.current || !exp.hand.length) {
       if (exp && exp.current) {
-        exp.letters -= 1;
-        expeditionLog("背囊空了，你硬着头皮走，丢了一封信。");
+        expeditionSpendLetter("背囊空了，你硬着头皮走，丢了一封信。");
         if (exp.letters <= 0 || exp.current.kind === "boss") finishExpedition(false);
         else advanceExpedition();
       }
@@ -3512,6 +3717,15 @@
     exp.hand = [];
     expSelection = [];
 
+    const heal = cards.reduce((total, card) => total + (card.heal || 0), 0);
+    if (heal > 0) {
+      const before = exp.letters;
+      exp.letters = Math.min(expeditionMaxLetters(), exp.letters + heal);
+      if (exp.letters > before) {
+        expeditionLog(`热水壶暖了暖手，补回 ${exp.letters - before} 封信。`);
+      }
+    }
+
     const detour = cards.some((card) => card.skip);
     if (detour) {
       expeditionLog(`你绕开了${current.title}，多走了几里路。`);
@@ -3524,8 +3738,8 @@
     }
 
     const shield = cards.some((card) => card.shield);
-    const power = cards.reduce(
-      (total, card) => total + card.power + (card.tag !== "any" && card.tag === current.tag ? 2 : 0),
+    const power = selected.reduce(
+      (total, id) => total + expeditionCardPower(id, current),
       0
     );
 
@@ -3541,8 +3755,11 @@
       return;
     }
 
-    if (!shield) exp.letters -= 1;
-    expeditionLog(`${current.title}没过去${shield ? "，护信保住了信袋" : "，丢了一封信"}。`);
+    if (!shield) {
+      expeditionSpendLetter(`${current.title}没过去，丢了一封信。`);
+    } else {
+      expeditionLog(`${current.title}没过去，护信保住了信袋。`);
+    }
     if (exp.letters <= 0) {
       finishExpedition(false);
     } else if (current.kind === "boss") {
@@ -3561,13 +3778,13 @@
     const exp = state.expedition;
     if (!exp || !exp.current) return;
     if (choice === "heal") {
-      exp.letters = Math.min(3, exp.letters + 1);
+      exp.letters = Math.min(expeditionMaxLetters(), exp.letters + 1);
       expeditionLog("你在营地睡了一会儿，补回 1 封信。");
     } else if (choice === "supply") {
       exp.supplies = Math.min(9, exp.supplies + 2);
       expeditionLog("你在营地补了 2 份干粮。");
     } else if (choice === "card") {
-      const id = EXP_CARD_POOL[Math.floor(Math.random() * EXP_CARD_POOL.length)];
+      const id = expeditionRandomUnlockedCard();
       exp.deck.push(id);
       expeditionLog(`你在营地捡到一张「${EXP_CARDS[id].name}」。`);
     }
@@ -3590,7 +3807,7 @@
         playDenySound();
         return;
       }
-      const id = EXP_CARD_POOL[Math.floor(Math.random() * EXP_CARD_POOL.length)];
+      const id = expeditionRandomUnlockedCard();
       exp.deck.push(id);
       expeditionLog(`货郎给了你一张「${EXP_CARDS[id].name}」。`);
     } else {
@@ -3615,7 +3832,7 @@
     if (effect.lootStamps) exp.loot.stamps += effect.lootStamps;
     if (effect.ink) exp.loot.ink += effect.ink;
     if (effect.addCard) {
-      const id = EXP_CARD_POOL[Math.floor(Math.random() * EXP_CARD_POOL.length)];
+      const id = expeditionRandomUnlockedCard();
       exp.deck.push(id);
       expeditionLog(`你得到一张「${EXP_CARDS[id].name}」。`);
     }
@@ -3630,11 +3847,30 @@
     const stamps = Math.floor(exp.loot.stamps * ratio);
     const ink = Math.floor(exp.loot.ink * ratio);
     const moon = success ? 1 : 0;
+    const beforeWins = state.expeditionWins;
     addStamps(stamps);
     addInk(ink);
     if (moon) state.moonStamps += moon;
     if (success) state.expeditionWins += 1;
-    exp.result = { success, stamps, ink, moon };
+    const unlocked = success
+      ? Object.values(EXP_CARDS)
+          .filter(
+            (card) =>
+              (card.unlockWins || 0) > beforeWins &&
+              (card.unlockWins || 0) <= state.expeditionWins
+          )
+          .map((card) => card.name)
+      : [];
+    exp.result = {
+      success,
+      stamps,
+      ink,
+      moon,
+      rewards: expeditionRewardChoices(success),
+      rewardPicked: null,
+      rewardName: "",
+      unlocked
+    };
     exp.active = false;
     updateGoals();
     checkAchievements({ announce: true });
@@ -3673,7 +3909,7 @@
     const branches = Object.entries(MOON_BRANCHES);
     els.panelBody.innerHTML = `
       <div class="moon-card" aria-hidden="true">
-        <img src="assets/moon-banner.webp" alt="" width="1200" height="480" loading="lazy" decoding="async">
+        <img src="/assets/moon-banner.webp" alt="" width="1200" height="480" loading="lazy" decoding="async">
         <p class="moon-caption">23:00 · 夜班邮车</p>
       </div>
       <p class="prestige-copy">攒够 30,000 张邮票，夜班邮车就会来接走这一程的信。月光邮戳可以点亮月光树：每用掉 1 枚，全局产出 +10%，节点永久保留。柜台来信每完成 4 封，也会留下 1 枚。</p>
@@ -4830,10 +5066,360 @@
     saveGame();
   }
 
+  // ---------- account + cloud save ----------
+
+  function escapeHtml(value) {
+    return String(value).replace(/[&<>"']/g, (character) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;"
+    }[character]));
+  }
+
+  function cloudBase() {
+    return account ? account.base : accountBaseDraft;
+  }
+
+  function applyRemoteSave(payload) {
+    suppressSaves = true;
+    writeSave(payload);
+    window.location.reload();
+  }
+
+  function cloudErrorMessage(error) {
+    const code = error && error.payload && error.payload.error;
+    if (code === "username_taken") return "这个用户名已经被用掉了。";
+    if (code === "invalid_credentials") return "用户名或密码不对。";
+    if (code === "unauthorized") return "登录已过期，请重新登录。";
+    if (error && error.status === 0) return "连不上邮局服务器，检查地址或网络。";
+    return (error && error.message) || "操作失败，请稍后再试。";
+  }
+
+  function cloudStatusText() {
+    if (!account || !account.token) return "未登录。";
+    if (account.conflict) return `云端有更新（修订 ${account.conflict}），请选择保留哪一份。`;
+    if (cloudPushing) return "正在同步…";
+    if (account.dirty) return "有未同步的改动，稍后自动上传。";
+    return `已同步，服务器修订 ${account.revision}。`;
+  }
+
+  function refreshAccountButton() {
+    if (!els.accountBtn || !els.accountLabel) return;
+    const loggedIn = Boolean(account && account.token);
+    setText(els.accountLabel, loggedIn ? account.username : "登录");
+    els.accountBtn.classList.toggle("has-account", loggedIn);
+    els.accountBtn.classList.toggle("has-conflict", Boolean(account && account.conflict));
+    els.accountBtn.setAttribute(
+      "aria-label",
+      loggedIn ? `账号 ${account.username}，${cloudStatusText()}` : "登录或注册"
+    );
+  }
+
+  function accountModalMarkup() {
+    if (!account || !account.token) {
+      const localNote = state ? `本机累计 ${formatNumber(state.totalEarned)} 张邮票` : "";
+      return `
+        <div class="account-box">
+          <div class="account-tabs" role="tablist" aria-label="登录或注册">
+            <button class="account-tab${accountMode === "login" ? " is-active" : ""}" type="button" role="tab" aria-selected="${accountMode === "login"}" data-account-mode="login">登录</button>
+            <button class="account-tab${accountMode === "register" ? " is-active" : ""}" type="button" role="tab" aria-selected="${accountMode === "register"}" data-account-mode="register">注册</button>
+          </div>
+          <p class="account-copy">${accountMode === "register"
+            ? "注册时会把浏览器里的本地存档一起上传；之后换设备登录，就能接着这一程送信。"
+            : "登录后以服务器上的存档为准，本机进度会被服务器覆盖。"}</p>
+          <label class="account-field"><span>用户名</span>
+            <input id="accountUser" autocomplete="username" maxlength="24" placeholder="3-24 个字符">
+          </label>
+          <label class="account-field"><span>密码</span>
+            <input id="accountPass" type="password" autocomplete="${accountMode === "register" ? "new-password" : "current-password"}" maxlength="128" placeholder="至少 8 位">
+          </label>
+          <label class="account-field"><span>服务器</span>
+            <input id="accountBase" value="${escapeHtml(cloudBase())}" placeholder="http://127.0.0.1:17322">
+          </label>
+          <p class="account-status" id="accountStatus">${escapeHtml(localNote)}</p>
+          <button class="primary-btn account-submit" type="button" data-account-submit>${accountMode === "register" ? "注册并上传存档" : "登录"}</button>
+          <p class="account-hint">密码只用于登录，服务器保存的是 Argon2 哈希；正式环境请使用 HTTPS。</p>
+        </div>`;
+    }
+
+    return `
+      <div class="account-box">
+        <p class="account-user">已登录 <b>${escapeHtml(account.username)}</b></p>
+        <p class="account-status" id="accountStatus">${escapeHtml(cloudStatusText())}</p>
+        ${account.conflict ? `
+          <div class="account-conflict">
+            <p>云端存档比本机新（修订 ${account.conflict}）。选一份保留：</p>
+            <div class="account-actions">
+              <button class="primary-btn" type="button" data-account-pull>用云端覆盖本地</button>
+              <button class="secondary-btn" type="button" data-account-push>上传本地覆盖云端</button>
+            </div>
+          </div>` : ""}
+        <div class="account-actions">
+          <button class="primary-btn" type="button" data-account-sync ${account.conflict ? "disabled" : ""}>立即同步</button>
+          <button class="secondary-btn" type="button" data-account-logout>退出登录</button>
+        </div>
+        <p class="account-hint">服务器 ${escapeHtml(account.base)} · 修订 ${account.revision}</p>
+      </div>`;
+  }
+
+  function setAccountStatus(text) {
+    const element = document.getElementById("accountStatus");
+    if (element) setText(element, text);
+  }
+
+  function renderAccountModal() {
+    if (!els.modal || els.modal.hidden) return;
+    if (!els.modalBody.querySelector(".account-box")) return;
+    els.modalBody.innerHTML = accountModalMarkup();
+  }
+
+  function openAccountModal() {
+    accountMode = "login";
+    openModal({
+      title: "账号与云存档",
+      body: accountModalMarkup(),
+      footer: false,
+      kicker: "苔藓邮局 · 云端"
+    });
+  }
+
+  function scheduleCloudPush(delay = 2500) {
+    if (!account || !account.token || account.conflict) return;
+    account.dirty = true;
+    cloudApi.saveAccount(account);
+    refreshAccountButton();
+    clearTimeout(cloudPushTimer);
+    cloudPushTimer = setTimeout(() => {
+      cloudPushNow();
+    }, delay);
+  }
+
+  async function cloudPushNow() {
+    if (!account || !account.token || cloudPushing || !state) return;
+    if (account.conflict) {
+      showToast("云端有更新，先在账号里选一份保留。", 4200);
+      return;
+    }
+    cloudPushing = true;
+    refreshAccountButton();
+    if (els.modalBody.querySelector(".account-box")) renderAccountModal();
+    try {
+      const result = await cloudApi.push(account, state);
+      account.revision = Number(result && result.revision) || account.revision + 1;
+      account.dirty = false;
+      account.conflict = 0;
+      cloudApi.saveAccount(account);
+    } catch (error) {
+      if (error.status === 401) {
+        account.token = "";
+        cloudApi.saveAccount(account);
+        showToast("登录已过期，请重新登录。", 5000);
+      } else if (error.status === 409) {
+        account.conflict =
+          Number(error.payload && error.payload.revision) || account.revision + 1;
+        account.dirty = true;
+        cloudApi.saveAccount(account);
+        showToast("云端也有新进度，打开账号选择保留哪一份。", 5200);
+      } else {
+        showToast("云同步失败，稍后会再试。", 3600);
+      }
+    } finally {
+      cloudPushing = false;
+      refreshAccountButton();
+      if (els.modalBody.querySelector(".account-box")) renderAccountModal();
+    }
+  }
+
+  function initCloud() {
+    account = cloudApi.loadAccount();
+    if (account) accountBaseDraft = account.base;
+    refreshAccountButton();
+    if (account && account.token) {
+      setTimeout(() => {
+        cloudBootstrap();
+      }, 800);
+    }
+  }
+
+  async function cloudBootstrap() {
+    if (!account || !account.token || !state) return;
+    try {
+      const info = await cloudApi.me(account);
+      if (info && info.username) account.username = info.username;
+      const remote = await cloudApi.pull(account);
+      if (!remote) {
+        account.revision = 0;
+        account.dirty = true;
+        cloudApi.saveAccount(account);
+        scheduleCloudPush(500);
+        return;
+      }
+      if (remote.revision > account.revision) {
+        if (account.dirty) {
+          account.conflict = remote.revision;
+          cloudApi.saveAccount(account);
+          refreshAccountButton();
+          showToast("云端有更新的存档，打开账号选择保留哪一份。", 6000);
+          return;
+        }
+        account.revision = remote.revision;
+        account.dirty = false;
+        account.conflict = 0;
+        cloudApi.saveAccount(account);
+        applyRemoteSave(remote.payload);
+        return;
+      }
+      if (remote.revision < account.revision) {
+        account.revision = remote.revision;
+        account.dirty = true;
+        cloudApi.saveAccount(account);
+        scheduleCloudPush(500);
+        return;
+      }
+      if (account.dirty) scheduleCloudPush(500);
+    } catch (error) {
+      if (error.status === 401) {
+        account.token = "";
+        cloudApi.saveAccount(account);
+        refreshAccountButton();
+        showToast("登录已过期，请重新登录。", 5000);
+      }
+    }
+  }
+
+  async function submitAccount() {
+    const userInput = document.getElementById("accountUser");
+    const passInput = document.getElementById("accountPass");
+    const baseInput = document.getElementById("accountBase");
+    if (!userInput || !passInput) return;
+
+    const username = userInput.value.trim();
+    const password = passInput.value;
+    const base = (baseInput && baseInput.value.trim()) || accountBaseDraft;
+    accountBaseDraft = base;
+
+    if (username.length < 3 || username.length > 24) {
+      setAccountStatus("用户名需要 3-24 个字符。");
+      return;
+    }
+    if (password.length < 8) {
+      setAccountStatus("密码至少 8 位。");
+      return;
+    }
+
+    const submit = document.querySelector("[data-account-submit]");
+    if (submit) submit.disabled = true;
+    setAccountStatus(
+      accountMode === "register" ? "正在注册并上传本地存档…" : "正在登录…"
+    );
+
+    try {
+      if (accountMode === "register") {
+        const result = await cloudApi.register({
+          base,
+          username,
+          password,
+          save: state
+        });
+        account = {
+          base,
+          token: result.token,
+          userId: result.user_id,
+          username: result.username,
+          revision: Number(result.save_revision) || 0,
+          dirty: false,
+          conflict: 0
+        };
+        cloudApi.saveAccount(account);
+        refreshAccountButton();
+        renderAccountModal();
+        showToast("账号建好了，本地存档已经一起寄上去。", 4600);
+        return;
+      }
+
+      const result = await cloudApi.login({ base, username, password });
+      const pending = {
+        base,
+        token: result.token,
+        userId: result.user_id,
+        username: result.username,
+        revision: Number(result.save_revision) || 0,
+        dirty: false,
+        conflict: 0
+      };
+      const remote = await cloudApi.pull(pending);
+      if (remote) {
+        pending.revision = remote.revision;
+        cloudApi.saveAccount(pending);
+        applyRemoteSave(remote.payload);
+        return;
+      }
+
+      account = pending;
+      account.revision = 0;
+      account.dirty = true;
+      cloudApi.saveAccount(account);
+      const pushed = await cloudApi.push(account, state);
+      account.revision = Number(pushed && pushed.revision) || 1;
+      account.dirty = false;
+      cloudApi.saveAccount(account);
+      refreshAccountButton();
+      renderAccountModal();
+      showToast("服务器上还没有存档，已把本地存档传上去。", 4600);
+    } catch (error) {
+      setAccountStatus(cloudErrorMessage(error));
+      if (submit && submit.isConnected) submit.disabled = false;
+    }
+  }
+
+  async function accountLogout() {
+    const current = account;
+    account = null;
+    cloudApi.clearAccount();
+    refreshAccountButton();
+    closeModal();
+    if (current && current.token) {
+      cloudApi.logout(current).catch(() => {});
+    }
+    showToast("已退出账号，本机存档还在。", 3600);
+  }
+
+  async function accountPullOverride() {
+    if (!account || !account.token) return;
+    setAccountStatus("正在读取云端存档…");
+    try {
+      const remote = await cloudApi.pull(account);
+      if (!remote) {
+        setAccountStatus("云端没有存档。");
+        return;
+      }
+      account.revision = remote.revision;
+      account.dirty = false;
+      account.conflict = 0;
+      cloudApi.saveAccount(account);
+      applyRemoteSave(remote.payload);
+    } catch (error) {
+      setAccountStatus(cloudErrorMessage(error));
+    }
+  }
+
+  async function accountPushOverride() {
+    if (!account || !account.token) return;
+    account.revision = account.conflict || account.revision;
+    account.conflict = 0;
+    account.dirty = true;
+    cloudApi.saveAccount(account);
+    await cloudPushNow();
+  }
+
   function saveGame(options = {}) {
     if (!state) return;
+    if (suppressSaves) return;
     if (options.markSeen !== false) state.lastSeen = Date.now();
     writeSave(state);
+    scheduleCloudPush();
     try {
       if (window.claude && window.claude.hot && typeof window.claude.hot.snapshot === "function") {
         window.claude.hot.snapshot({ game: state });
@@ -5013,6 +5599,7 @@
 
     els.helpBtn.addEventListener("click", openHelpModal);
     els.resetBtn.addEventListener("click", openResetModal);
+    if (els.accountBtn) els.accountBtn.addEventListener("click", openAccountModal);
 
     els.modalCancel.addEventListener("click", closeModal);
     els.modalConfirm.addEventListener("click", () => {
@@ -5029,6 +5616,34 @@
       applyEventChoice(Number(choice.dataset.eventChoice));
     });
     els.modalBody.addEventListener("click", (event) => {
+      const mode = event.target.closest("[data-account-mode]");
+      if (mode) {
+        accountMode = mode.dataset.accountMode === "register" ? "register" : "login";
+        renderAccountModal();
+        return;
+      }
+      if (event.target.closest("[data-account-submit]")) {
+        submitAccount();
+        return;
+      }
+      if (event.target.closest("[data-account-sync]")) {
+        cloudPushNow();
+        return;
+      }
+      if (event.target.closest("[data-account-logout]")) {
+        accountLogout();
+        return;
+      }
+      if (event.target.closest("[data-account-pull]")) {
+        accountPullOverride();
+        return;
+      }
+      if (event.target.closest("[data-account-push]")) {
+        accountPushOverride();
+        return;
+      }
+    });
+    els.modalBody.addEventListener("click", (event) => {
       const option = event.target.closest("[data-exp-option]");
       if (option) { chooseExpeditionOption(Number(option.dataset.expOption)); return; }
       const card = event.target.closest("[data-exp-card]");
@@ -5043,6 +5658,8 @@
       if (trade) { expeditionTrade(trade.dataset.expTrade); return; }
       const choice = event.target.closest("[data-exp-event]");
       if (choice) { expeditionEventChoice(Number(choice.dataset.expEvent)); return; }
+      const reward = event.target.closest("[data-exp-reward]");
+      if (reward) { claimExpeditionReward(Number(reward.dataset.expReward)); return; }
       if (event.target.closest("[data-exp-close]")) { closeModal(); return; }
       if (event.target.closest("[data-exp-abandon]")) { expConfirmAbandon = true; renderExpedition(); return; }
       if (event.target.closest("[data-exp-abandon-confirm]")) { abandonExpedition(); return; }
@@ -5200,6 +5817,7 @@
     updateBellUi();
     refreshLive();
     saveGame();
+    initCloud();
 
     if (document.hidden) hiddenAt = Date.now();
 

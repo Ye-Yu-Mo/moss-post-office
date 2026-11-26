@@ -1,18 +1,3 @@
-<!doctype html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="description" content="一款可爱的林地邮局放置游戏：盖戳寄信、招募小邮差，再把信送到月亮。">
-<meta name="theme-color" content="#e3efe4" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#1b2922" media="(prefers-color-scheme: dark)">
-<link rel="icon" type="image/png" href="assets/favicon.png">
-<title>苔藓邮局</title>
-<link rel="preload" as="image" href="assets/scene-dusk.webp" fetchpriority="high">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=ZCOOL+KuaiLe&display=swap" media="print" onload="this.media='all'">
-<style>
 /* ------------------------------------------------------------------
    Palette: a mossy village post office at closing time — mint paper,
    pine ink, raspberry wax, butter-yellow stamps, and a little lavender dusk.
@@ -327,7 +312,7 @@ h3 {
   flex: 0 0 auto;
   width: 1em;
   height: 1em;
-  background-image: url(assets/ui-icons.webp);
+  background-image: url(/assets/ui-icons.webp);
   background-repeat: no-repeat;
   background-size: 400% 600%;
   background-position: calc(var(--c) * 33.3333%) calc(var(--r) * 20%);
@@ -3654,7 +3639,7 @@ h3 {
 
 .tree-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -3950,6 +3935,15 @@ h3 {
   color: var(--muted);
   font-size: 9px;
   line-height: 1.5;
+}
+
+.expedition-entry .expedition-meta {
+  color: color-mix(in srgb, var(--lavender) 42%, var(--muted));
+}
+
+.expedition-entry .expedition-next {
+  color: var(--moss-deep);
+  font-weight: 600;
 }
 
 .expedition-open {
@@ -4389,6 +4383,34 @@ h3 {
   line-height: 1.6;
 }
 
+.exp-result .exp-meta {
+  color: color-mix(in srgb, var(--lavender) 40%, var(--muted));
+}
+
+.exp-result .exp-unlock {
+  color: var(--moss-deep);
+  font-weight: 700;
+}
+
+.exp-rewards {
+  margin-top: 10px;
+  text-align: left;
+}
+
+.exp-rewards .exp-lead {
+  margin-bottom: 6px;
+}
+
+.exp-result .exp-reward-picked {
+  margin-top: 8px;
+  color: var(--moss-deep);
+  font-weight: 600;
+}
+
+.exp-reward {
+  text-align: left;
+}
+
 .exp-result-actions {
   display: flex;
   justify-content: center;
@@ -4428,199 +4450,160 @@ h3 {
   }
 }
 
-</style>
 
-</head>
-<body>
-<div class="page">
-  <header class="topbar">
-    <div class="brand">
-      <div class="brand-seal" aria-hidden="true">
-        <span class="s-icon" style="--r:5;--c:0"></span>
-      </div>
-      <div>
-        <h1>苔藓邮局</h1>
-        <p>把想说的话，交给苔藓和月亮。</p>
-      </div>
-    </div>
+/* ---------- account + cloud save ---------- */
+.account-btn {
+  position: relative;
+}
 
-    <div class="topbar-right">
-      <div class="day-note">
-        <span class="live-dot" aria-hidden="true"></span>
-        <span id="dayLabel">今天 · 宜寄一封慢信</span>
-      </div>
-      <button class="soft-btn" id="soundBtn" type="button" aria-pressed="true" aria-label="关闭音效">
-        <span class="s-icon" id="soundIconOn" style="--r:5;--c:2" aria-hidden="true"></span>
-        <span class="s-icon" id="soundIconOff" style="--r:5;--c:3" aria-hidden="true" hidden></span>
-        <span id="soundLabel">音效 开</span>
-      </button>
-    </div>
-  </header>
+.account-btn.has-account {
+  border-color: color-mix(in srgb, var(--moss) 45%, var(--line));
+  color: var(--moss-deep);
+}
 
-  <main class="game-grid">
-    <section class="stage-card" id="stageCard" aria-label="苔藓邮局寄信窗口">
-      <div class="stage-head">
-        <span class="eyebrow">第一窗口 · 盖戳寄信</span>
-        <span class="open-pill">营业中</span>
-      </div>
+.account-btn.has-conflict::after {
+  content: "";
+  position: absolute;
+  top: 5px;
+  right: 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--berry-deep);
+}
 
-      <div class="scene" id="scene" data-weather="sunny">
-        <img class="scene-bg" id="sceneBg" src="assets/scene-dusk.webp" width="1536" height="1024" alt="" fetchpriority="high" decoding="async" draggable="false">
+.account-box {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
 
-        <div class="scene-fx" id="sceneFx" aria-hidden="true"></div>
-        <div class="scene-grain" aria-hidden="true"></div>
+.account-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper-2);
+}
 
-        <div class="weather-chip" id="weatherChip" title="苔藓镇的天气会给不同邮差带来加成">
-          <span class="weather-icon" id="weatherIcon" aria-hidden="true">
-            <span class="s-icon" style="--r:3;--c:3"></span>
-          </span>
-          <span id="weatherLabel">晴天 · 盖戳 +80%</span>
-        </div>
+.account-tab {
+  min-height: 32px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
 
-        <button class="golden-letter" id="goldenLetter" type="button" aria-label="拆开一封闪光的信" hidden>
-          <span class="golden-rays" aria-hidden="true"></span>
-          <span class="s-icon" style="--r:5;--c:0" aria-hidden="true"></span>
-          <span class="golden-tag">闪光的信</span>
-        </button>
-        <div class="scene-sparks" id="sceneSparks" aria-hidden="true"></div>
-      </div>
+.account-tab.is-active {
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--ink) 10%, transparent);
+}
 
-      <div class="counter">
-        <div class="ledger">
-          <span class="ledger-label">存票夹</span>
-          <div class="amount-row">
-            <span class="stamp-mark" aria-hidden="true"></span>
-            <strong class="big-amount" id="stampCount">0</strong>
-            <span class="amount-unit">张邮票</span>
-          </div>
-          <div class="rate-line">
-            <span>自动送信</span>
-            <strong id="rateText">+0/秒</strong>
-            <span class="rate-sep">·</span>
-            <span>每戳 <b id="clickValue">+1</b></span>
-          </div>
-          <div class="combo-line" aria-hidden="true">
-            <span class="combo-label" id="comboLabel">连击 ×1.00</span>
-            <span class="combo-track"><span class="combo-fill" id="comboFill"></span></span>
-            <span class="combo-tip" id="comboTip">金圈内盖戳 ×3</span>
-          </div>
-          <div class="ink-line">
-            <span class="ink-mark" aria-hidden="true"></span>
-            <span class="ink-label">墨点</span>
-            <strong id="inkCount">0</strong>
-            <span class="ink-tip" id="inkTip">完美盖戳 +1</span>
-          </div>
-          <p class="stamp-quality" id="stampQuality" aria-live="polite">等蜡封转到金圈时盖戳，完美 ×3</p>
-        </div>
+.account-copy {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.6;
+}
 
-        <div class="seal-wrap">
-          <div class="stamp-ring" id="stampRing" aria-hidden="true">
-            <span class="stamp-ring-good"></span>
-            <span class="stamp-ring-perfect"></span>
-            <span class="stamp-ring-orbit" id="stampOrbit"><span class="stamp-ring-dot"></span></span>
-          </div>
-          <button class="seal-button" id="stampBtn" type="button" aria-label="盖戳寄信，获得 1 张邮票">
-            <span class="s-icon" style="--r:1;--c:2" aria-hidden="true"></span>
-            <span class="seal-title">盖戳</span>
-            <span class="seal-gain" id="sealGain">+1</span>
-          </button>
-          <div class="floaters" id="floaters" aria-hidden="true"></div>
-        </div>
-      </div>
+.account-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 10px;
+}
 
-      <div class="goal-strip" id="goalStrip">
-        <div class="goal-mark" aria-hidden="true">愿</div>
-        <div class="goal-body">
-          <div class="goal-top">
-            <span>今日小愿望</span>
-            <span class="goal-count" id="goalCount">0 / 13</span>
-          </div>
-          <p class="goal-title" id="goalTitle">盖下第一枚邮戳</p>
-          <div class="goal-bar"><span class="goal-fill" id="goalFill"></span></div>
-        </div>
-        <button class="bell-btn" id="bellBtn" type="button" aria-label="摇响风铃，20 秒内让全邮局产出变为 3 倍">
-          <span class="bell-inner">
-            <span class="s-icon" style="--r:2;--c:1" aria-hidden="true"></span>
-            <span class="bell-label" id="bellLabel">摇铃</span>
-            <span class="bell-sub" id="bellSub">就绪</span>
-          </span>
-        </button>
-      </div>
-    </section>
+.account-field input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 12px;
+}
 
-    <aside class="shop-card" aria-label="邮局小店">
-      <div class="shop-head">
-        <div>
-          <span class="eyebrow" id="panelEyebrow">苔藓镇 · 邮局小店</span>
-          <h2 id="panelTitle">把信交给谁？</h2>
-        </div>
-        <div class="buy-switch" id="buySwitch" role="group" aria-label="购买数量">
-          <button type="button" data-amount="1" aria-pressed="true">买 1</button>
-          <button type="button" data-amount="10" aria-pressed="false">买 10</button>
-        </div>
-      </div>
+.account-field input:focus {
+  outline: 2px solid color-mix(in srgb, var(--moss) 32%, transparent);
+  outline-offset: 1px;
+}
 
-      <div class="tabs" role="tablist" aria-label="邮局小店分类">
-        <button class="tab" id="tabPosties" type="button" role="tab" aria-selected="true" aria-controls="panelBody" data-tab="posties">邮差</button>
-        <button class="tab" id="tabOrders" type="button" role="tab" aria-selected="false" aria-controls="panelBody" data-tab="orders" tabindex="-1">信件 <span class="tab-count" id="orderDot" hidden>0</span></button>
-        <button class="tab" id="tabDispatch" type="button" role="tab" aria-selected="false" aria-controls="panelBody" data-tab="dispatch" tabindex="-1">邮路 <span class="tab-count" id="dispatchDot" hidden>0</span></button>
-        <button class="tab" id="tabUpgrades" type="button" role="tab" aria-selected="false" aria-controls="panelBody" data-tab="upgrades" tabindex="-1">工坊 <span class="tab-count" id="upgradeDot" hidden>0</span></button>
-        <button class="tab" id="tabAlbum" type="button" role="tab" aria-selected="false" aria-controls="panelBody" data-tab="album" tabindex="-1">邮册 <span class="tab-count" id="albumDot" hidden>0</span></button>
-        <button class="tab" id="tabMoon" type="button" role="tab" aria-selected="false" aria-controls="panelBody" data-tab="moon" tabindex="-1">月亮 <span class="tab-count" id="moonDot" hidden>!</span></button>
-      </div>
+.account-status {
+  min-height: 16px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
 
-      <div class="panel" id="panelBody" role="tabpanel" aria-labelledby="tabPosties"></div>
+.account-submit {
+  width: 100%;
+}
 
-      <div class="shop-foot">
-        <span id="collectionText">邮戳收藏 0 / 7</span>
-        <button class="link-btn" id="helpBtn" type="button">怎么玩</button>
-      </div>
-    </aside>
-  </main>
+.account-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.5;
+  word-break: break-all;
+}
 
-  <footer class="page-foot">
-    <p><span class="foot-dot" aria-hidden="true"></span>离开时也会慢慢送信，收益按一半计算，最多两小时。</p>
-    <div class="foot-actions">
-      <span id="saveNote">会自动夹进邮册</span>
-      <button class="link-btn" id="resetBtn" type="button">重新开张</button>
-    </div>
-  </footer>
-</div>
+.account-user {
+  margin: 0;
+  color: var(--ink);
+  font-size: 13px;
+}
 
-<div class="mobile-dock" id="mobileDock" role="region" aria-label="快捷窗口">
-  <div class="mobile-dock-inner">
-    <div class="quick-stats">
-      <span class="quick-label">存票夹</span>
-      <strong id="quickStamps">0</strong>
-      <span id="quickRate">+0/秒</span>
-    </div>
-    <button class="quick-shop" id="quickShopBtn" type="button" aria-label="跳到邮局小店">
-      <span class="s-icon" style="--r:5;--c:1" aria-hidden="true"></span>
-      <span>小店</span>
-    </button>
-    <button class="quick-seal" id="quickStampBtn" type="button" aria-label="盖戳寄信，获得 1 张邮票">
-      <span>盖戳</span>
-      <b id="quickGain">+1</b>
-    </button>
-  </div>
-</div>
+.account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 
-<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+.account-actions .primary-btn,
+.account-actions .secondary-btn {
+  flex: 1 1 140px;
+  width: auto;
+}
 
-<div class="modal-backdrop" id="modal" hidden>
-  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle" aria-describedby="modalBody" tabindex="-1">
-    <div class="modal-kicker">苔藓邮局 · 通知</div>
-    <h3 id="modalTitle">通知</h3>
-    <div class="modal-body" id="modalBody"></div>
-    <div class="modal-actions">
-      <button class="soft-btn" id="modalCancel" type="button">再想想</button>
-      <button class="primary-btn" id="modalConfirm" type="button">确定</button>
-    </div>
-  </div>
-</div>
+.secondary-btn {
+  min-height: 38px;
+  padding: 8px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
 
-<script src="assets/pixi-7.4.2.min.js"></script>
-<script src="assets/pixi-unsafe-eval-7.4.2.min.js"></script>
-<script src="game.js"></script>
-</body>
-</html>
+.secondary-btn:hover {
+  background: var(--paper-2);
+}
+
+.account-conflict {
+  padding: 9px 10px;
+  border: 1px dashed color-mix(in srgb, var(--berry-deep) 45%, var(--line));
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--berry) 8%, var(--paper));
+}
+
+.account-conflict p {
+  margin: 0 0 7px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+}

@@ -13,3 +13,7 @@
 
 # Generated single-file build (recreate with build_standalone.py)
 /moss-post-office.html
+
+# Frontend
+node_modules/
+dist/

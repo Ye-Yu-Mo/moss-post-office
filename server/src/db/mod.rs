@@ -1,46 +1,19 @@
-use std::{
-    path::{Path, PathBuf},
-    time::Duration,
-};
+mod events;
+mod saves;
+mod schema;
+mod sessions;
+mod users;
+
+use std::{path::Path, path::PathBuf, time::Duration};
 
 use rusqlite::Connection;
 
 use crate::error::ApiError;
 
-const SCHEMA: &str = r#"
-PRAGMA journal_mode = WAL;
-
-CREATE TABLE IF NOT EXISTS players (
-    id            TEXT PRIMARY KEY,
-    token_hash    TEXT NOT NULL,
-    recovery_hash TEXT NOT NULL,
-    created_at    INTEGER NOT NULL,
-    last_seen     INTEGER NOT NULL
-);
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_players_token
-    ON players (token_hash);
-
-CREATE TABLE IF NOT EXISTS saves (
-    player_id  TEXT PRIMARY KEY REFERENCES players (id) ON DELETE CASCADE,
-    revision   INTEGER NOT NULL,
-    payload    TEXT NOT NULL,
-    client_ts  INTEGER NOT NULL DEFAULT 0,
-    updated_at INTEGER NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS events (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    player_id  TEXT NOT NULL,
-    name       TEXT NOT NULL,
-    payload    TEXT,
-    client_ts  INTEGER NOT NULL DEFAULT 0,
-    created_at INTEGER NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_events_player
-    ON events (player_id, id);
-"#;
+pub use events::NewEvent;
+pub use saves::StoredSave;
+pub use sessions::SessionUser;
+pub use users::{NewAccount, UserRecord};
 
 /// Small SQLite wrapper. Connections are opened per request; WAL makes that
 /// cheap and keeps the handler futures `Send`.
@@ -65,7 +38,7 @@ impl Db {
 
     fn init(&self) -> Result<(), ApiError> {
         let conn = open_connection(&self.path)?;
-        conn.execute_batch(SCHEMA)?;
+        schema::init(&conn)?;
         Ok(())
     }
 
