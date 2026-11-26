@@ -5362,3 +5362,87 @@ h3 {
   font-family: var(--font-data);
   font-size: 8.5px;
 }
+
+.garden-journal {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line);
+}
+
+.crop-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+  margin-bottom: 10px;
+}
+
+.crop-stat {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 6px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--paper);
+}
+
+.crop-stat-icon .s-icon {
+  width: 22px;
+  height: 22px;
+}
+
+.crop-stat b {
+  display: block;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crop-stat small {
+  display: block;
+  color: var(--muted);
+  font-size: 7.5px;
+  white-space: nowrap;
+}
+
+.visitor-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.visitor-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 7px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--paper);
+}
+
+.visitor-row b {
+  display: block;
+  color: var(--ink);
+  font-size: 9.5px;
+}
+
+.visitor-row small {
+  color: var(--muted);
+  font-size: 8px;
+}
+
+@media (max-width: 620px) {
+  .crop-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.garden-journal-empty {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 8.5px;
+}

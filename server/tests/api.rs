@@ -780,6 +780,18 @@ async fn garden_harvest_and_friend_steal() {
         .unwrap();
     let garden = json_body(response).await;
     assert_eq!(garden["plots"][1]["stolen"], 1);
+    assert!(garden["crop_stats"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|stat| stat["crop"] == "letter" && stat["harvests"] == 1));
+    assert!(garden["crop_stats"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|stat| stat["crop"] == "stamp" && stat["stolen"] == 1));
+    assert_eq!(garden["visitors"][0]["action"], "steal");
+    assert_eq!(garden["visitors"][0]["actor_name"], "gardener_bob");
 
     let response = app
         .clone()
@@ -999,6 +1011,11 @@ async fn friend_can_water_once_per_plot() {
         .unwrap();
     let garden = json_body(response).await;
     assert_eq!(garden["plots"][0]["watered"], true);
+    assert!(garden["visitors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|visitor| visitor["action"] == "help" && visitor["actor_name"] == "water_bob"));
 
     let response = app
         .clone()

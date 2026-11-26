@@ -27,6 +27,23 @@ pub struct GardenPlot {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct CropStat {
+    pub crop: String,
+    pub name: String,
+    pub harvests: i64,
+    pub stolen: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct GardenVisitor {
+    pub actor_name: String,
+    pub action: String,
+    pub crop: String,
+    pub name: String,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct GardenReward {
     pub crop: String,
     pub name: String,
@@ -252,12 +269,80 @@ impl Db {
                 "UPDATE users SET garden_harvests = garden_harvests + 1 WHERE id = ?1",
                 [&owner_id],
             )?;
+            tx.execute(
+                "INSERT INTO garden_crop_stats (user_id, crop, harvests, stolen)
+                 VALUES (?1, ?2, 1, 0)
+                 ON CONFLICT(user_id, crop) DO UPDATE SET harvests = harvests + 1",
+                params![owner_id, crop],
+            )?;
             tx.commit()?;
             Ok(Some(GardenReward {
                 name: name_of(&crop).to_string(),
                 crop,
                 amount,
             }))
+        })
+        .await
+    }
+
+    pub async fn crop_stats(&self, user_id: String) -> Result<Vec<CropStat>, ApiError> {
+        self.call(move |conn| {
+            let mut stats = std::collections::HashMap::new();
+            let mut statement = conn.prepare(
+                "SELECT crop, harvests, stolen FROM garden_crop_stats WHERE user_id = ?1",
+            )?;
+            let rows = statement.query_map([user_id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            })?;
+            for row in rows {
+                let (crop, harvests, stolen) = row?;
+                stats.insert(crop, (harvests, stolen));
+            }
+            Ok(GARDEN_CROPS
+                .iter()
+                .map(|(crop, name, _, _, _)| {
+                    let (harvests, stolen) = stats.get(*crop).copied().unwrap_or((0, 0));
+                    CropStat {
+                        crop: (*crop).to_string(),
+                        name: (*name).to_string(),
+                        harvests,
+                        stolen,
+                    }
+                })
+                .collect())
+        })
+        .await
+    }
+
+    pub async fn garden_visitors(&self, owner_id: String) -> Result<Vec<GardenVisitor>, ApiError> {
+        self.call(move |conn| {
+            let mut statement = conn.prepare(
+                "SELECT COALESCE(u.username, '一位邮差'), a.action, a.crop, a.created_at
+                 FROM garden_actions a
+                 LEFT JOIN users u ON u.id = a.actor_id
+                 WHERE a.owner_id = ?1
+                 ORDER BY a.id DESC
+                 LIMIT 8",
+            )?;
+            let rows = statement.query_map([owner_id], |row| {
+                let crop: String = row.get(2)?;
+                Ok(GardenVisitor {
+                    actor_name: row.get(0)?,
+                    action: row.get(1)?,
+                    name: name_of(&crop).to_string(),
+                    crop,
+                    created_at: row.get(3)?,
+                })
+            })?;
+            let mut visitors = Vec::new();
+            for row in rows {
+                visitors.push(row?);
+            }
+            Ok(visitors)
         })
         .await
     }
@@ -316,6 +401,11 @@ impl Db {
                  WHERE owner_id = ?2 AND plot = ?3",
                 params![new_ripe, owner_id, plot],
             )?;
+            tx.execute(
+                "INSERT INTO garden_actions (actor_id, owner_id, plot, action, crop, created_at)
+                 VALUES (?1, ?2, ?3, 'help', ?4, ?5)",
+                params![helper_id, owner_id, plot, crop, now],
+            )?;
             tx.commit()?;
             Ok(true)
         })
@@ -371,6 +461,17 @@ impl Db {
                     params![next_stolen, owner_id, plot],
                 )?;
             }
+            tx.execute(
+                "INSERT INTO garden_crop_stats (user_id, crop, harvests, stolen)
+                 VALUES (?1, ?2, 0, 1)
+                 ON CONFLICT(user_id, crop) DO UPDATE SET stolen = stolen + 1",
+                params![owner_id, crop],
+            )?;
+            tx.execute(
+                "INSERT INTO garden_actions (actor_id, owner_id, plot, action, crop, created_at)
+                 VALUES (?1, ?2, ?3, 'steal', ?4, ?5)",
+                params![thief_id, owner_id, plot, crop, now],
+            )?;
             tx.commit()?;
             Ok(Some(GardenReward {
                 name: name_of(&crop).to_string(),

@@ -184,6 +184,7 @@ curl -sS -X POST http://127.0.0.1:17322/v1/events \
 - 偷菜：仅好友或 NPC；每块地每天一次，单块最多被偷 2 份；NPC 被偷满 2 份后重新生长。
 - 帮浇水：仅好友或 NPC；每块地每天一次，效果和主人浇水一样，并给对方留一张 `water_note`。
 - 扩地：累计收菜 20 次解锁第 4 块地，45 次解锁第 5 块地；新地块为空地。
+- 图鉴/来访：`garden_crop_stats` 记录每种作物收成/被偷次数，`garden_actions` 记录最近偷菜/浇水，自己的后院接口返回 `crop_stats` 与 `visitors`。
 - 偷好友的菜会给对方留一张预设纸条（`steal_note`），不进每天 5 张寄信额度。
 - 首次创建菜地时三块地都是熟的，方便马上体验。
 - 奖励由客户端领取后写入本地存档（和明信片礼物一致）。
@@ -197,7 +198,7 @@ curl -sS -X POST http://127.0.0.1:17322/v1/events \
 ## 数据与备份
 
 - 表：`users`、`sessions`、`login_challenges`、`saves`、`events`、`bots`、`postcards`、`postcard_sends`、`friend_requests`、`friendships`、`friend_visits`、`collectibles`、`garden_plots`、`garden_steals`；SQLite WAL。
-- v1 的匿名表重命名为 `*_v1_legacy`；v2 的 Argon2 密码表重命名为 `*_v2_legacy`，都不会被静默删除。v4 给 `users` 增加公开统计列并创建社交表；v5 增加 `friend_code` 与好友关系表；v6 增加 `friend_visits`；v7 增加 `collectibles`；v8 增加 `garden_plots` / `garden_steals`；v9 增加浇水状态；v10 增加 `users.garden_harvests` 与稀有种子解锁；v11 增加 `garden_helps`。
+- v1 的匿名表重命名为 `*_v1_legacy`；v2 的 Argon2 密码表重命名为 `*_v2_legacy`，都不会被静默删除。v4 给 `users` 增加公开统计列并创建社交表；v5 增加 `friend_code` 与好友关系表；v6 增加 `friend_visits`；v7 增加 `collectibles`；v8 增加 `garden_plots` / `garden_steals`；v9 增加浇水状态；v10 增加 `users.garden_harvests` 与稀有种子解锁；v11 增加 `garden_helps`；v12 增加作物统计与来访日志。
 - `verifier` 是 256 位派生值；它等价于本站的登录密钥，数据库泄露仍会导致账号被冒用，请限制 DB 访问并备份加密。
 - 备份：`sqlite3 data/moss.db ".backup 'backup.db'"`，或停服务后连同 `-wal/-shm` 一起复制。
 - 事件表会持续增长；上线后按周归档或保留 90 天。

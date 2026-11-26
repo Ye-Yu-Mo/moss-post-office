@@ -26,6 +26,8 @@ pub struct GardenResponse {
     pub owner: GardenOwner,
     pub plots: Vec<crate::db::GardenPlot>,
     pub harvests: i64,
+    pub crop_stats: Vec<crate::db::CropStat>,
+    pub visitors: Vec<crate::db::GardenVisitor>,
 }
 
 pub async fn own_garden(
@@ -40,6 +42,8 @@ pub async fn own_garden(
         .await?;
     let plots = state.db.garden(context.user.id.clone(), created_at).await?;
     let harvests = state.db.garden_harvests(context.user.id.clone()).await?;
+    let crop_stats = state.db.crop_stats(context.user.id.clone()).await?;
+    let visitors = state.db.garden_visitors(context.user.id.clone()).await?;
     Ok(Json(GardenResponse {
         owner: GardenOwner {
             id: context.user.id,
@@ -48,6 +52,8 @@ pub async fn own_garden(
         },
         plots,
         harvests,
+        crop_stats,
+        visitors,
     }))
 }
 
@@ -75,6 +81,8 @@ pub async fn friend_garden(
             },
             plots,
             harvests: 0,
+            crop_stats: Vec::new(),
+            visitors: Vec::new(),
         }));
     }
 
@@ -103,6 +111,8 @@ pub async fn friend_garden(
         },
         plots,
         harvests: 0,
+        crop_stats: Vec::new(),
+        visitors: Vec::new(),
     }))
 }
 

@@ -6421,6 +6421,25 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
               ? `已收 ${garden.harvests || 0} 次 · 再收 ${45 - garden.harvests} 次解锁第 5 块地`
               : `已收 ${garden.harvests || 0} 次 · 菜地已扩到 5 块`}</p>
           <div class="garden-grid">${(garden.plots || []).map((plot) => gardenPlotMarkup(plot, { mode: "own", harvests: garden.harvests || 0 })).join("")}</div>
+          <div class="garden-journal">
+            <div class="tree-head"><span>作物图鉴</span><span>收成 / 被偷</span></div>
+            <div class="crop-stat-grid">
+              ${(garden.crop_stats || []).map((stat) => `
+                <div class="crop-stat">
+                  <span class="crop-stat-icon" aria-hidden="true">${ICONS[GARDEN_ICONS[stat.crop] || "letter"]}</span>
+                  <b>${stat.name}</b>
+                  <small>收 ${formatNumber(stat.harvests)} · 被偷 ${formatNumber(stat.stolen)}</small>
+                </div>`).join("")}
+            </div>
+            <div class="tree-head"><span>最近来访</span><span>${(garden.visitors || []).length} 条</span></div>
+            ${(garden.visitors || []).length
+              ? `<div class="visitor-list">${(garden.visitors || []).map((visitor) => `
+                  <div class="visitor-row">
+                    ${townAvatar(visitor.actor_name)}
+                    <div><b>${escapeHtml(visitor.actor_name)}</b><small>${visitor.action === "steal" ? "偷了" : "浇了"}一次${escapeHtml(visitor.name)} · ${townTime(visitor.created_at)}</small></div>
+                  </div>`).join("")}</div>`
+              : `<p class="garden-journal-empty">还没有人来过后院。</p>`}
+          </div>
         </section>`
       : "";
     const friendSection = `
