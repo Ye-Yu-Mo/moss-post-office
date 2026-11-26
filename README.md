@@ -41,7 +41,8 @@ MOSS_BIND=127.0.0.1:17322 MOSS_DB=data/moss.db cargo run
 | 接口 | 作用 |
 | --- | --- |
 | `POST /v1/auth/register` | 注册；可带 `save`，首次注册原子写入 revision 1 |
-| `POST /v1/auth/login` | 登录，返回 30 天会话 token |
+| `POST /v1/auth/challenge` | 取一次性登录 nonce |
+| `POST /v1/auth/login` | 挑战应答登录，返回 30 天会话 token |
 | `POST /v1/auth/logout` | 注销当前会话 |
 | `GET /v1/me` | 当前用户和存档 revision |
 | `GET/PUT /v1/save` | 云存档，`base_revision` 冲突检测 |
@@ -62,7 +63,7 @@ web/                    Vite 前端
   public/assets/        图片、PixiJS
 server/                 Rust 同步服务
   src/api/              路由处理器
-  src/auth/             token、Argon2
+  src/auth/             token、HMAC、用户名归一化
   src/db/               schema 与查询
   src/config.rs
 docs/architecture.md    分层与边界

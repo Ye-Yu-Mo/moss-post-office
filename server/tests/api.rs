@@ -5,11 +5,15 @@ use axum::{
     http::{header, Request, StatusCode},
     Router,
 };
+use hmac::{Hmac, Mac};
 use http_body_util::BodyExt;
 use moss_sync::{build_router, db::Db, AppState};
 use serde_json::{json, Value};
+use sha2::Sha256;
 use tempfile::TempDir;
 use tower::ServiceExt;
+
+const VERIFIER: &str = "abababababababababababababababababababababababababababababababab";
 
 fn test_app() -> (Router, TempDir) {
     let dir = tempfile::tempdir().expect("temp dir");
@@ -27,10 +31,27 @@ async fn json_body(response: axum::response::Response) -> Value {
     serde_json::from_slice(&bytes).expect("json body")
 }
 
-fn register_request(username: &str, password: &str, save: Option<Value>) -> Request<Body> {
+fn verify_hex(value: &str) -> Vec<u8> {
+    (0..value.len())
+        .step_by(2)
+        .map(|index| u8::from_str_radix(&value[index..index + 2], 16).unwrap())
+        .collect()
+}
+
+fn proof(verifier: &str, nonce: &str) -> String {
+    let mut mac = Hmac::<Sha256>::new_from_slice(&verify_hex(verifier)).unwrap();
+    mac.update(nonce.as_bytes());
+    mac.finalize()
+        .into_bytes()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+fn register_request(username: &str, save: Option<Value>) -> Request<Body> {
     let body = match save {
-        Some(save) => json!({ "username": username, "password": password, "save": save }),
-        None => json!({ "username": username, "password": password }),
+        Some(save) => json!({ "username": username, "verifier": VERIFIER, "save": save }),
+        None => json!({ "username": username, "verifier": VERIFIER }),
     };
     Request::post("/v1/auth/register")
         .header(header::CONTENT_TYPE, "application/json")
@@ -38,11 +59,18 @@ fn register_request(username: &str, password: &str, save: Option<Value>) -> Requ
         .unwrap()
 }
 
-fn login_request(username: &str, password: &str) -> Request<Body> {
+fn challenge_request(username: &str) -> Request<Body> {
+    Request::post("/v1/auth/challenge")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(json!({ "username": username }).to_string()))
+        .unwrap()
+}
+
+fn login_request(username: &str, nonce: &str, proof: &str) -> Request<Body> {
     Request::post("/v1/auth/login")
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from(
-            json!({ "username": username, "password": password }).to_string(),
+            json!({ "username": username, "nonce": nonce, "proof": proof }).to_string(),
         ))
         .unwrap()
 }
@@ -71,20 +99,32 @@ fn save_request(token: &str, base_revision: u64, payload: Value) -> Request<Body
         .unwrap()
 }
 
-async fn register_ok(app: &Router, username: &str, password: &str, save: Option<Value>) -> Value {
+async fn register_ok(app: &Router, username: &str, save: Option<Value>) -> Value {
     let response = app
         .clone()
-        .oneshot(register_request(username, password, save))
+        .oneshot(register_request(username, save))
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     json_body(response).await
 }
 
-async fn login_ok(app: &Router, username: &str, password: &str) -> Value {
+async fn challenge_nonce(app: &Router, username: &str) -> String {
     let response = app
         .clone()
-        .oneshot(login_request(username, password))
+        .oneshot(challenge_request(username))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = json_body(response).await;
+    body["nonce"].as_str().unwrap().to_string()
+}
+
+async fn login_ok(app: &Router, username: &str) -> Value {
+    let nonce = challenge_nonce(app, username).await;
+    let response = app
+        .clone()
+        .oneshot(login_request(username, &nonce, &proof(VERIFIER, &nonce)))
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
@@ -97,13 +137,12 @@ async fn register_uploads_the_local_save_and_login_reads_it() {
     let registered = register_ok(
         &app,
         "MossKeeper",
-        "moss-post-123",
         Some(json!({ "version": 6, "stamps": 42 })),
     )
     .await;
     assert_eq!(registered["save_revision"], 1);
 
-    let logged_in = login_ok(&app, "MossKeeper", "moss-post-123").await;
+    let logged_in = login_ok(&app, "MossKeeper").await;
     let token = logged_in["token"].as_str().unwrap();
     assert_eq!(logged_in["save_revision"], 1);
 
@@ -137,11 +176,11 @@ async fn register_uploads_the_local_save_and_login_reads_it() {
 #[tokio::test]
 async fn usernames_are_case_insensitive_and_unique() {
     let (app, _dir) = test_app();
-    register_ok(&app, "MossKeeper", "moss-post-123", None).await;
+    register_ok(&app, "MossKeeper", None).await;
 
     let response = app
         .clone()
-        .oneshot(register_request("mosskeeper", "another-pass", None))
+        .oneshot(register_request("mosskeeper", None))
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::CONFLICT);
@@ -149,18 +188,42 @@ async fn usernames_are_case_insensitive_and_unique() {
 }
 
 #[tokio::test]
-async fn wrong_password_and_logout_revoke_access() {
+async fn wrong_proof_and_nonce_replay_are_rejected() {
     let (app, _dir) = test_app();
-    register_ok(&app, "night_post", "moss-post-123", None).await;
+    register_ok(&app, "night_post", None).await;
 
+    let nonce = challenge_nonce(&app, "night_post").await;
+    let bad = "00".repeat(32);
     let response = app
         .clone()
-        .oneshot(login_request("night_post", "wrong-password"))
+        .oneshot(login_request("night_post", &nonce, &bad))
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 
-    let logged_in = login_ok(&app, "night_post", "moss-post-123").await;
+    // A spent nonce cannot be used again, even with the right proof.
+    let nonce = challenge_nonce(&app, "night_post").await;
+    let good = proof(VERIFIER, &nonce);
+    let response = app
+        .clone()
+        .oneshot(login_request("night_post", &nonce, &good))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let response = app
+        .clone()
+        .oneshot(login_request("night_post", &nonce, &good))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn logout_revokes_the_session() {
+    let (app, _dir) = test_app();
+    register_ok(&app, "post_office", None).await;
+    let logged_in = login_ok(&app, "post_office").await;
     let token = logged_in["token"].as_str().unwrap();
 
     let response = app
@@ -181,10 +244,10 @@ async fn wrong_password_and_logout_revoke_access() {
 #[tokio::test]
 async fn registration_without_a_save_starts_empty() {
     let (app, _dir) = test_app();
-    let registered = register_ok(&app, "empty_bag", "moss-post-123", None).await;
+    let registered = register_ok(&app, "empty_bag", None).await;
     assert_eq!(registered["save_revision"], 0);
 
-    let logged_in = login_ok(&app, "empty_bag", "moss-post-123").await;
+    let logged_in = login_ok(&app, "empty_bag").await;
     let token = logged_in["token"].as_str().unwrap();
 
     let response = app
@@ -206,7 +269,7 @@ async fn registration_without_a_save_starts_empty() {
 #[tokio::test]
 async fn events_are_batched_and_validated() {
     let (app, _dir) = test_app();
-    let registered = register_ok(&app, "event_keeper", "moss-post-123", None).await;
+    let registered = register_ok(&app, "event_keeper", None).await;
     let token = registered["token"].as_str().unwrap();
 
     let response = app

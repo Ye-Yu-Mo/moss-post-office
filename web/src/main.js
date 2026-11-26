@@ -1,4 +1,5 @@
 import * as cloudApi from "./cloud.js";
+import { deriveVerifier, proveVerifier } from "./crypto.js";
 
 (() => {
   "use strict";
@@ -5140,7 +5141,7 @@ import * as cloudApi from "./cloud.js";
           </label>
           <p class="account-status" id="accountStatus">${escapeHtml(localNote)}</p>
           <button class="primary-btn account-submit" type="button" data-account-submit>${accountMode === "register" ? "注册并上传存档" : "登录"}</button>
-          <p class="account-hint">密码只用于登录，服务器保存的是 Argon2 哈希；正式环境请使用 HTTPS。</p>
+          <p class="account-hint">密码不会离开浏览器：登录用一次性挑战，服务器只存派生校验值。HTTP 下仍请勿复用重要密码。</p>
         </div>`;
     }
 
@@ -5311,16 +5312,19 @@ import * as cloudApi from "./cloud.js";
 
     const submit = document.querySelector("[data-account-submit]");
     if (submit) submit.disabled = true;
-    setAccountStatus(
-      accountMode === "register" ? "正在注册并上传本地存档…" : "正在登录…"
-    );
+    setAccountStatus("正在生成登录凭据…");
 
     try {
+      const verifier = await deriveVerifier(username, password);
+      setAccountStatus(
+        accountMode === "register" ? "正在注册并上传本地存档…" : "正在获取登录挑战…"
+      );
+
       if (accountMode === "register") {
         const result = await cloudApi.register({
           base,
           username,
-          password,
+          verifier,
           save: state
         });
         account = {
@@ -5339,7 +5343,14 @@ import * as cloudApi from "./cloud.js";
         return;
       }
 
-      const result = await cloudApi.login({ base, username, password });
+      const loginChallenge = await cloudApi.challenge({ base, username });
+      setAccountStatus("正在登录…");
+      const result = await cloudApi.login({
+        base,
+        username,
+        nonce: loginChallenge.nonce,
+        proof: proveVerifier(verifier, loginChallenge.nonce)
+      });
       const pending = {
         base,
         token: result.token,

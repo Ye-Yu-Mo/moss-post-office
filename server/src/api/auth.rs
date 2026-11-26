@@ -16,18 +16,35 @@ use crate::{
     AppState,
 };
 
+const CHALLENGE_SECONDS: i64 = 120;
+
 #[derive(Deserialize)]
 pub struct RegisterRequest {
     pub username: String,
-    pub password: String,
+    /// 32-byte client-derived verifier, hex encoded. The password itself never
+    /// leaves the browser.
+    pub verifier: String,
     #[serde(default)]
     pub save: Option<Value>,
 }
 
 #[derive(Deserialize)]
+pub struct ChallengeRequest {
+    pub username: String,
+}
+
+#[derive(Serialize)]
+pub struct ChallengeResponse {
+    pub nonce: String,
+    pub expires_at: i64,
+    pub algorithm: &'static str,
+}
+
+#[derive(Deserialize)]
 pub struct LoginRequest {
     pub username: String,
-    pub password: String,
+    pub nonce: String,
+    pub proof: String,
 }
 
 #[derive(Serialize)]
@@ -50,11 +67,9 @@ pub async fn register(
     Json(request): Json<RegisterRequest>,
 ) -> Result<Json<AuthResponse>, ApiError> {
     let (username, username_key) = validate_username(&request.username)?;
-    validate_password(&request.password)?;
-
-    let password = request.password.clone();
-    let password_hash =
-        tokio::task::spawn_blocking(move || auth::hash_password(&password)).await??;
+    if !auth::is_hex_64(&request.verifier) {
+        return Err(ApiError::BadRequest("verifier must be 64 hex characters"));
+    }
 
     let save_payload = match request.save {
         Some(save) => {
@@ -80,7 +95,7 @@ pub async fn register(
             user_id: user_id.clone(),
             username: username.clone(),
             username_key,
-            password_hash,
+            verifier: request.verifier.to_ascii_lowercase(),
             token_hash,
             now: created_at,
             expires_at,
@@ -96,26 +111,51 @@ pub async fn register(
     }))
 }
 
+pub async fn challenge(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<ChallengeRequest>,
+) -> Result<Json<ChallengeResponse>, ApiError> {
+    if request.username.trim().chars().count() > 24 {
+        return Err(ApiError::BadRequest("username is too long"));
+    }
+
+    let nonce = auth::new_nonce();
+    let created_at = now();
+    let expires_at = created_at + CHALLENGE_SECONDS;
+    state
+        .db
+        .create_challenge(nonce.clone(), created_at, expires_at)
+        .await?;
+
+    Ok(Json(ChallengeResponse {
+        nonce,
+        expires_at,
+        algorithm: "HMAC-SHA256",
+    }))
+}
+
 pub async fn login(
     State(state): State<Arc<AppState>>,
     Json(request): Json<LoginRequest>,
 ) -> Result<Json<AuthResponse>, ApiError> {
-    let username_key = auth::normalize_username(&request.username);
-    let password = request.password.clone();
-    if username_key.is_empty() || password.is_empty() {
+    let nonce = request.nonce.trim();
+    let proof = request.proof.trim();
+    if nonce.len() < 20 || nonce.len() > 128 || !auth::is_hex_64(proof) {
         return Err(ApiError::InvalidCredentials);
     }
 
+    // Consume first: a proof cannot be replayed even if the username is wrong.
+    if !state.db.consume_challenge(nonce.to_string(), now()).await? {
+        return Err(ApiError::InvalidCredentials);
+    }
+
+    let username_key = auth::normalize_username(&request.username);
     let user = state
         .db
         .user_by_username(username_key)
         .await?
         .ok_or(ApiError::InvalidCredentials)?;
-    let password_hash = user.password_hash.clone();
-    let valid =
-        tokio::task::spawn_blocking(move || auth::verify_password(&password_hash, &password))
-            .await?;
-    if !valid {
+    if !auth::verify_proof(&user.verifier, nonce, proof) {
         return Err(ApiError::InvalidCredentials);
     }
 
@@ -212,16 +252,4 @@ fn validate_username(raw: &str) -> Result<(String, String), ApiError> {
         ));
     }
     Ok((username.to_string(), auth::normalize_username(username)))
-}
-
-fn validate_password(password: &str) -> Result<(), ApiError> {
-    if password.chars().count() < 8 {
-        return Err(ApiError::BadRequest(
-            "password must be at least 8 characters",
-        ));
-    }
-    if password.len() > 256 {
-        return Err(ApiError::BadRequest("password is too long"));
-    }
-    Ok(())
 }

@@ -22,6 +22,7 @@ pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/healthz", get(health::health))
         .route("/v1/auth/register", post(auth::register))
+        .route("/v1/auth/challenge", post(auth::challenge))
         .route("/v1/auth/login", post(auth::login))
         .route("/v1/auth/logout", post(auth::logout))
         .route("/v1/me", get(auth::me))

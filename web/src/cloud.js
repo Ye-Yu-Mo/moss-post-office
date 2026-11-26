@@ -101,17 +101,24 @@ async function request(base, path, { method = "GET", token = "", body, allow404 
   throw new CloudError(message, response.status, payload);
 }
 
-export async function register({ base, username, password, save }) {
+export async function register({ base, username, verifier, save }) {
   return request(base, "/v1/auth/register", {
     method: "POST",
-    body: { username, password, save }
+    body: { username, verifier, save }
   });
 }
 
-export async function login({ base, username, password }) {
+export async function challenge({ base, username }) {
+  return request(base, "/v1/auth/challenge", {
+    method: "POST",
+    body: { username }
+  });
+}
+
+export async function login({ base, username, nonce, proof }) {
   return request(base, "/v1/auth/login", {
     method: "POST",
-    body: { username, password }
+    body: { username, nonce, proof }
   });
 }
 

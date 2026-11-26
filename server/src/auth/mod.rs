@@ -1,11 +1,8 @@
-mod password;
-
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use hmac::{Hmac, Mac};
 use rand::{thread_rng, RngCore};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
-
-pub use password::{hash_password, verify_password};
 
 pub fn new_user_id() -> String {
     let mut bytes = [0u8; 16];
@@ -17,6 +14,10 @@ pub fn new_token() -> String {
     let mut bytes = [0u8; 32];
     thread_rng().fill_bytes(&mut bytes);
     URL_SAFE_NO_PAD.encode(bytes)
+}
+
+pub fn new_nonce() -> String {
+    new_token()
 }
 
 pub fn sha256_hex(input: &str) -> String {
@@ -34,4 +35,36 @@ pub fn constant_time_eq(left: &str, right: &str) -> bool {
 
 pub fn normalize_username(username: &str) -> String {
     username.trim().to_lowercase()
+}
+
+pub fn is_hex_64(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+/// Proof = HMAC-SHA256(key = verifier, message = nonce), hex encoded.
+pub fn verify_proof(verifier_hex: &str, nonce: &str, proof_hex: &str) -> bool {
+    let Some(key) = decode_hex(verifier_hex) else {
+        return false;
+    };
+    let Some(proof) = decode_hex(proof_hex) else {
+        return false;
+    };
+    let Ok(mut mac) = Hmac::<Sha256>::new_from_slice(&key) else {
+        return false;
+    };
+    mac.update(nonce.as_bytes());
+    mac.verify_slice(&proof).is_ok()
+}
+
+fn decode_hex(value: &str) -> Option<Vec<u8>> {
+    if value.len() % 2 != 0 {
+        return None;
+    }
+    let bytes = value.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len() / 2);
+    for pair in bytes.chunks(2) {
+        let text = std::str::from_utf8(pair).ok()?;
+        out.push(u8::from_str_radix(text, 16).ok()?);
+    }
+    Some(out)
 }

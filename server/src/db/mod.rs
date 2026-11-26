@@ -1,3 +1,4 @@
+mod challenges;
 mod events;
 mod saves;
 mod schema;

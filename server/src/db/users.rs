@@ -6,14 +6,14 @@ use crate::{db::Db, error::ApiError};
 pub struct UserRecord {
     pub id: String,
     pub username: String,
-    pub password_hash: String,
+    pub verifier: String,
 }
 
 pub struct NewAccount {
     pub user_id: String,
     pub username: String,
     pub username_key: String,
-    pub password_hash: String,
+    pub verifier: String,
     pub token_hash: String,
     pub now: i64,
     pub expires_at: i64,
@@ -28,13 +28,13 @@ impl Db {
             .call(move |conn| -> rusqlite::Result<Result<bool, ()>> {
                 let tx = conn.transaction()?;
                 let inserted = tx.execute(
-                    "INSERT INTO users (id, username, username_key, password_hash, created_at, last_login)
+                    "INSERT INTO users (id, username, username_key, verifier, created_at, last_login)
                      VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
                     params![
                         account.user_id,
                         account.username,
                         account.username_key,
-                        account.password_hash,
+                        account.verifier,
                         account.now
                     ],
                 );
@@ -82,13 +82,13 @@ impl Db {
     ) -> Result<Option<UserRecord>, ApiError> {
         self.call(move |conn| {
             conn.query_row(
-                "SELECT id, username, password_hash FROM users WHERE username_key = ?1",
+                "SELECT id, username, verifier FROM users WHERE username_key = ?1",
                 [username_key],
                 |row| {
                     Ok(UserRecord {
                         id: row.get(0)?,
                         username: row.get(1)?,
-                        password_hash: row.get(2)?,
+                        verifier: row.get(2)?,
                     })
                 },
             )
