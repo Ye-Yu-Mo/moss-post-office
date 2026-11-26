@@ -5755,6 +5755,12 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     if (error && /cannot water now/i.test(error.message || "")) {
       return "现在不用浇水。";
     }
+    if (error && /cannot water this plot/i.test(error.message || "")) {
+      return "这块地现在不需要浇水，或者已经浇过了。";
+    }
+    if (error && /cannot water your own plot/i.test(error.message || "")) {
+      return "自己的地自己浇。";
+    }
     if (error && /crop is not ripe/i.test(error.message || "")) {
       return "还没熟，再等等。";
     }
@@ -6186,8 +6192,12 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       action = ripe
         ? `<button class="link-btn" type="button" data-harvest-plot="${plot.plot}">收菜</button>`
         : `<button class="link-btn" type="button" data-water-plot="${plot.plot}" ${plot.watered ? "disabled" : ""}>${plot.watered ? "已浇水" : "浇水"}</button>`;
+    } else if (ripe) {
+      action = `<button class="link-btn" type="button" data-steal-plot="${plot.plot}" data-owner-id="${escapeHtml(options.ownerId || "")}">偷一把</button>`;
+    } else if (!plot.watered) {
+      action = `<button class="link-btn" type="button" data-help-plot="${plot.plot}" data-owner-id="${escapeHtml(options.ownerId || "")}">帮浇水</button>`;
     } else {
-      action = `<button class="link-btn" type="button" data-steal-plot="${plot.plot}" data-owner-id="${escapeHtml(options.ownerId || "")}" ${ripe ? "" : "disabled"}>偷一把</button>`;
+      action = `<button class="link-btn" type="button" disabled>已浇水</button>`;
     }
     return `
       <article class="garden-plot${ripe ? " is-ripe" : ""}">
@@ -6285,6 +6295,17 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       applyGardenReward(result.reward);
       showToast(`收下了 ${gardenRewardText(result.reward)}。`, 3400);
       await loadTown();
+    } catch (error) {
+      showToast(cloudErrorMessage(error), 3200);
+    }
+  }
+
+  async function helpGardenPlot(ownerId, plot) {
+    if (!account || !account.token) return;
+    try {
+      await cloudApi.helpPlot(account, ownerId, plot);
+      showToast("帮对方浇了水，成熟时间缩短了 25%。", 3200);
+      await openGardenModal(ownerId);
     } catch (error) {
       showToast(cloudErrorMessage(error), 3200);
     }
@@ -6393,7 +6414,12 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     const gardenSection = garden
       ? `<section class="town-section garden-section">
           <div class="tree-head"><span>后院</span><span>${(garden.plots || []).filter((plot) => plot.ripe).length} 块可收</span></div>
-          <p class="town-lead">种着信封草、邮票花和墨莓。熟了就收，朋友也可以来偷一把。</p>
+          <p class="town-lead">种着信封草、邮票花和墨莓。熟了就收，朋友也可以来偷一把或帮你浇水。</p>
+          <p class="garden-next">${garden.harvests < 20
+            ? `已收 ${garden.harvests || 0} 次 · 再收 ${20 - (garden.harvests || 0)} 次解锁第 4 块地`
+            : garden.harvests < 45
+              ? `已收 ${garden.harvests || 0} 次 · 再收 ${45 - garden.harvests} 次解锁第 5 块地`
+              : `已收 ${garden.harvests || 0} 次 · 菜地已扩到 5 块`}</p>
           <div class="garden-grid">${(garden.plots || []).map((plot) => gardenPlotMarkup(plot, { mode: "own", harvests: garden.harvests || 0 })).join("")}</div>
         </section>`
       : "";
@@ -7123,6 +7149,11 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       const stealPlot = event.target.closest("[data-steal-plot]");
       if (stealPlot) {
         stealGardenPlot(stealPlot.dataset.ownerId, Number(stealPlot.dataset.stealPlot));
+        return;
+      }
+      const helpPlot = event.target.closest("[data-help-plot]");
+      if (helpPlot) {
+        helpGardenPlot(helpPlot.dataset.ownerId, Number(helpPlot.dataset.helpPlot));
         return;
       }
       const gardenOpen = event.target.closest("[data-garden-open]");

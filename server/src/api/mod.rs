@@ -53,6 +53,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/v1/garden/water", post(garden::water))
         .route("/v1/garden/{id}", get(garden::friend_garden))
         .route("/v1/garden/{id}/steal", post(garden::steal))
+        .route("/v1/garden/{id}/help", post(garden::help_water))
 }
 
 pub(crate) fn public_stats(payload: &serde_json::Value) -> (i64, i64) {

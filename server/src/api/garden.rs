@@ -167,6 +167,61 @@ pub async fn harvest(
     }
 }
 
+pub async fn help_water(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(owner_id): Path<String>,
+    Json(request): Json<PlotRequest>,
+) -> Result<Json<Value>, ApiError> {
+    let context = require_user(&state, &headers).await?;
+    if owner_id == context.user.id {
+        return Err(ApiError::BadRequest("cannot water your own plot"));
+    }
+    let is_bot = state.db.bot_by_id(owner_id.clone()).await?.is_some();
+    if !is_bot
+        && !state
+            .db
+            .are_friends(context.user.id.clone(), owner_id.clone())
+            .await?
+    {
+        return Err(ApiError::NotFound("garden"));
+    }
+    let created_at = now();
+    state
+        .db
+        .ensure_garden(owner_id.clone(), created_at, true)
+        .await?;
+    let watered = state
+        .db
+        .water_friend_plot(
+            context.user.id.clone(),
+            owner_id.clone(),
+            request.plot,
+            created_at,
+        )
+        .await?;
+    if !watered {
+        return Err(ApiError::BadRequest("cannot water this plot"));
+    }
+    if !is_bot {
+        state
+            .db
+            .insert_postcard(crate::db::NewPostcard {
+                sender_id: context.user.id,
+                sender_name: context.user.username,
+                sender_kind: "user".into(),
+                recipient_id: owner_id,
+                template: "water_note".into(),
+                gift_kind: None,
+                gift_amount: 0,
+                created_at,
+                arrives_at: created_at,
+            })
+            .await?;
+    }
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
 pub async fn steal(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,

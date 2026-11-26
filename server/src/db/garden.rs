@@ -90,6 +90,24 @@ impl Db {
                     params![owner_id, index as i64, crop, planted_at, ripe_at],
                 )?;
             }
+            let harvests: i64 = tx
+                .query_row(
+                    "SELECT garden_harvests FROM users WHERE id = ?1",
+                    [&owner_id],
+                    |row| row.get(0),
+                )
+                .optional()?
+                .unwrap_or(0);
+            for (threshold, plot) in [(20_i64, 3_i64), (45, 4)] {
+                if harvests >= threshold {
+                    tx.execute(
+                        "INSERT OR IGNORE INTO garden_plots
+                         (owner_id, plot, crop, planted_at, ripe_at, stolen, watered)
+                         VALUES (?1, ?2, '', 0, 0, 0, 0)",
+                        params![owner_id, plot],
+                    )?;
+                }
+            }
             tx.commit()?;
             Ok(())
         })
@@ -255,6 +273,51 @@ impl Db {
                 .optional()?
                 .unwrap_or(0);
             Ok(count)
+        })
+        .await
+    }
+
+    pub async fn water_friend_plot(
+        &self,
+        helper_id: String,
+        owner_id: String,
+        plot: i64,
+        now: i64,
+    ) -> Result<bool, ApiError> {
+        self.call(move |conn| {
+            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            let row: Option<(String, i64, i64)> = tx
+                .query_row(
+                    "SELECT crop, ripe_at, watered FROM garden_plots
+                     WHERE owner_id = ?1 AND plot = ?2",
+                    params![owner_id, plot],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                )
+                .optional()?;
+            let Some((crop, ripe_at, watered)) = row else {
+                return Ok(false);
+            };
+            if crop.is_empty() || watered != 0 || ripe_at <= now {
+                return Ok(false);
+            }
+            let inserted = tx.execute(
+                "INSERT OR IGNORE INTO garden_helps
+                 (helper_id, owner_id, plot, day, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![helper_id, owner_id, plot, now / 86_400, now],
+            )?;
+            if inserted == 0 {
+                return Ok(false);
+            }
+            let boost = duration_of(&crop) / 4;
+            let new_ripe = (ripe_at - boost).max(now + 60);
+            tx.execute(
+                "UPDATE garden_plots SET ripe_at = ?1, watered = 1
+                 WHERE owner_id = ?2 AND plot = ?3",
+                params![new_ripe, owner_id, plot],
+            )?;
+            tx.commit()?;
+            Ok(true)
         })
         .await
     }

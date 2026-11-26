@@ -5355,3 +5355,10 @@ h3 {
 .seed-card.is-locked .seed-lock {
   color: var(--muted);
 }
+
+.garden-next {
+  margin: 5px 0 0;
+  color: var(--moss-deep);
+  font-family: var(--font-data);
+  font-size: 8.5px;
+}
