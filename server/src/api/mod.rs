@@ -49,6 +49,8 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/v1/friends/{id}/visit", post(friends::visit_friend))
         .route("/v1/garden", get(garden::own_garden))
         .route("/v1/garden/harvest", post(garden::harvest))
+        .route("/v1/garden/plant", post(garden::plant))
+        .route("/v1/garden/water", post(garden::water))
         .route("/v1/garden/{id}", get(garden::friend_garden))
         .route("/v1/garden/{id}/steal", post(garden::steal))
 }

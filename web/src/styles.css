@@ -5246,3 +5246,35 @@ h3 {
   flex: 1 1 auto;
   min-width: 0;
 }
+
+.garden-plot.is-empty {
+  border-style: dashed;
+  background: var(--paper-2);
+}
+
+.garden-seeds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.garden-seed {
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--moss-deep);
+  font-family: inherit;
+  font-size: 8px;
+  cursor: pointer;
+}
+
+.garden-seed:hover {
+  border-color: color-mix(in srgb, var(--moss) 45%, var(--line));
+}
+
+@media (max-width: 620px) {
+  .garden-seeds {
+    grid-column: 2 / 4;
+  }
+}

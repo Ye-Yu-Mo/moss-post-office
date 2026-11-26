@@ -1,6 +1,6 @@
 use rusqlite::Connection;
 
-pub(super) const SCHEMA_VERSION: i64 = 8;
+pub(super) const SCHEMA_VERSION: i64 = 9;
 
 const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -113,6 +113,7 @@ CREATE TABLE IF NOT EXISTS garden_plots (
     planted_at INTEGER NOT NULL,
     ripe_at    INTEGER NOT NULL,
     stolen     INTEGER NOT NULL DEFAULT 0,
+    watered    INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (owner_id, plot)
 );
 
@@ -176,6 +177,7 @@ pub(super) fn init(conn: &Connection) -> rusqlite::Result<()> {
     }
     conn.execute_batch(SCHEMA)?;
     ensure_user_stat_columns(conn)?;
+    ensure_garden_columns(conn)?;
     conn.execute_batch(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_friend_code
          ON users (friend_code)
@@ -206,6 +208,15 @@ fn ensure_user_stat_columns(conn: &Connection) -> rusqlite::Result<()> {
         if !column_exists(conn, "users", name)? {
             conn.execute_batch(&format!("ALTER TABLE users ADD COLUMN {name} {ddl};"))?;
         }
+    }
+    Ok(())
+}
+
+fn ensure_garden_columns(conn: &Connection) -> rusqlite::Result<()> {
+    if !column_exists(conn, "garden_plots", "watered")? {
+        conn.execute_batch(
+            "ALTER TABLE garden_plots ADD COLUMN watered INTEGER NOT NULL DEFAULT 0;",
+        )?;
     }
     Ok(())
 }

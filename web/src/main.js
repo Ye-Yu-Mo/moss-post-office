@@ -214,6 +214,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
   ];
 
   const GARDEN_ICONS = { letter: "letter", stamp: "star", inkberry: "mushroom" };
+  const GARDEN_CROP_NAMES = { letter: "信封草", stamp: "邮票花", inkberry: "墨莓" };
 
   const TOWN_SETS = [
     { id: "town", name: "镇口", bots: ["b_moss", "b_box"], rewardMaterial: "cloth" },
@@ -5710,6 +5711,12 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     if (error && /request already pending/i.test(error.message || "")) {
       return "已经发过申请了，等对方接受。";
     }
+    if (error && /cannot plant here/i.test(error.message || "")) {
+      return "这块地已经种上了，先收掉再说。";
+    }
+    if (error && /cannot water now/i.test(error.message || "")) {
+      return "现在不用浇水。";
+    }
     if (error && /crop is not ripe/i.test(error.message || "")) {
       return "还没熟，再等等。";
     }
@@ -6115,14 +6122,38 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
   }
 
   function gardenPlotMarkup(plot, options = {}) {
+    const own = options.mode === "own";
+    if (plot.empty) {
+      if (!own) {
+        return `
+          <article class="garden-plot is-empty">
+            <span class="garden-icon" aria-hidden="true">${ICONS.fern}</span>
+            <div class="garden-copy"><b>空地</b><small>主人还没种下新的种子</small></div>
+          </article>`;
+      }
+      return `
+        <article class="garden-plot is-empty">
+          <span class="garden-icon" aria-hidden="true">${ICONS.fern}</span>
+          <div class="garden-copy"><b>空地</b><small>种点什么？</small></div>
+          <div class="garden-seeds">
+            ${Object.entries(GARDEN_CROP_NAMES).map(([crop, name]) => `
+              <button class="garden-seed" type="button" data-plant-plot="${plot.plot}" data-crop="${crop}">${name}</button>`).join("")}
+          </div>
+        </article>`;
+    }
     const ripe = Boolean(plot.ripe);
     const iconName = GARDEN_ICONS[plot.crop] || "letter";
-    const status = ripe
+    const status = `${plot.watered ? "已浇水 · " : ""}${ripe
       ? "可以收了"
-      : `还差 ${formatDuration(Math.max(0, plot.ripe_at - Date.now() / 1000))}`;
-    const action = options.mode === "own"
-      ? `<button class="link-btn" type="button" data-harvest-plot="${plot.plot}" ${ripe ? "" : "disabled"}>收菜</button>`
-      : `<button class="link-btn" type="button" data-steal-plot="${plot.plot}" data-owner-id="${escapeHtml(options.ownerId || "")}" ${ripe ? "" : "disabled"}>偷一把</button>`;
+      : `还差 ${formatDuration(Math.max(0, plot.ripe_at - Date.now() / 1000))}`}`;
+    let action;
+    if (own) {
+      action = ripe
+        ? `<button class="link-btn" type="button" data-harvest-plot="${plot.plot}">收菜</button>`
+        : `<button class="link-btn" type="button" data-water-plot="${plot.plot}" ${plot.watered ? "disabled" : ""}>${plot.watered ? "已浇水" : "浇水"}</button>`;
+    } else {
+      action = `<button class="link-btn" type="button" data-steal-plot="${plot.plot}" data-owner-id="${escapeHtml(options.ownerId || "")}" ${ripe ? "" : "disabled"}>偷一把</button>`;
+    }
     return `
       <article class="garden-plot${ripe ? " is-ripe" : ""}">
         <span class="garden-icon" aria-hidden="true">${ICONS[iconName]}</span>
@@ -6150,6 +6181,28 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     else state.materials.paper = Math.min(99, (state.materials.paper || 0) + amount);
     saveGame();
     refreshLive();
+  }
+
+  async function plantGardenPlot(plot, crop) {
+    if (!account || !account.token) return;
+    try {
+      await cloudApi.plantPlot(account, plot, crop);
+      showToast(`种下了${GARDEN_CROP_NAMES[crop] || "种子"}。`, 2800);
+      await loadTown();
+    } catch (error) {
+      showToast(cloudErrorMessage(error), 3200);
+    }
+  }
+
+  async function waterGardenPlot(plot) {
+    if (!account || !account.token) return;
+    try {
+      await cloudApi.waterPlot(account, plot);
+      showToast("浇了水，成熟时间缩短了 25%。", 3000);
+      await loadTown();
+    } catch (error) {
+      showToast(cloudErrorMessage(error), 3200);
+    }
   }
 
   async function harvestGardenPlot(plot) {
@@ -6972,6 +7025,16 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       const visitFriend = event.target.closest("[data-visit-friend]");
       if (visitFriend) {
         visitFriendById(visitFriend.dataset.visitFriend);
+        return;
+      }
+      const plantPlot = event.target.closest("[data-plant-plot]");
+      if (plantPlot) {
+        plantGardenPlot(Number(plantPlot.dataset.plantPlot), plantPlot.dataset.crop);
+        return;
+      }
+      const waterPlot = event.target.closest("[data-water-plot]");
+      if (waterPlot) {
+        waterGardenPlot(Number(waterPlot.dataset.waterPlot));
         return;
       }
       const harvestPlot = event.target.closest("[data-harvest-plot]");

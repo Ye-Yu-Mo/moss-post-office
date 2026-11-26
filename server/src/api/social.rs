@@ -30,6 +30,10 @@ const BOT_TEMPLATES: &[(&str, &str)] = &[
     ("daily_1", "星港的夜班车没有晚点，顺路带了一张邮票给你。"),
     ("daily_2", "湖面很安静，邮袋里多了一封没有署名的信。"),
     ("daily_3", "雨停了，屋檐下还滴着水。今天的信都送到了。"),
+    (
+        "steal_note",
+        "我来你的后院偷了一把菜。下次给你留一张明信片。",
+    ),
 ];
 
 fn template_text(id: &str) -> Option<&'static str> {

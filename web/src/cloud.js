@@ -178,6 +178,22 @@ export async function friendGarden(account, ownerId) {
   });
 }
 
+export async function plantPlot(account, plot, crop) {
+  return request(account.base, "/v1/garden/plant", {
+    method: "POST",
+    token: account.token,
+    body: { plot, crop }
+  });
+}
+
+export async function waterPlot(account, plot) {
+  return request(account.base, "/v1/garden/water", {
+    method: "POST",
+    token: account.token,
+    body: { plot }
+  });
+}
+
 export async function harvestPlot(account, plot) {
   return request(account.base, "/v1/garden/harvest", {
     method: "POST",

@@ -106,6 +106,46 @@ pub struct PlotRequest {
     pub plot: i64,
 }
 
+#[derive(Deserialize)]
+pub struct PlantRequest {
+    pub plot: i64,
+    pub crop: String,
+}
+
+pub async fn plant(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(request): Json<PlantRequest>,
+) -> Result<Json<Value>, ApiError> {
+    let context = require_user(&state, &headers).await?;
+    let planted = state
+        .db
+        .plant_plot(context.user.id, request.plot, request.crop, now())
+        .await?;
+    if planted {
+        Ok(Json(serde_json::json!({ "ok": true })))
+    } else {
+        Err(ApiError::BadRequest("cannot plant here"))
+    }
+}
+
+pub async fn water(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(request): Json<PlotRequest>,
+) -> Result<Json<Value>, ApiError> {
+    let context = require_user(&state, &headers).await?;
+    let watered = state
+        .db
+        .water_plot(context.user.id, request.plot, now())
+        .await?;
+    if watered {
+        Ok(Json(serde_json::json!({ "ok": true })))
+    } else {
+        Err(ApiError::BadRequest("cannot water now"))
+    }
+}
+
 pub async fn harvest(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -148,10 +188,34 @@ pub async fn steal(
         .await?;
     let reward = state
         .db
-        .steal_plot(context.user.id, owner_id, request.plot, created_at, is_bot)
+        .steal_plot(
+            context.user.id.clone(),
+            owner_id.clone(),
+            request.plot,
+            created_at,
+            is_bot,
+        )
         .await?;
     match reward {
-        Some(reward) => Ok(Json(serde_json::json!({ "ok": true, "reward": reward }))),
+        Some(reward) => {
+            if !is_bot {
+                state
+                    .db
+                    .insert_postcard(crate::db::NewPostcard {
+                        sender_id: context.user.id,
+                        sender_name: context.user.username,
+                        sender_kind: "user".into(),
+                        recipient_id: owner_id,
+                        template: "steal_note".into(),
+                        gift_kind: None,
+                        gift_amount: 0,
+                        created_at,
+                        arrives_at: created_at,
+                    })
+                    .await?;
+            }
+            Ok(Json(serde_json::json!({ "ok": true, "reward": reward })))
+        }
         None => Err(ApiError::BadRequest("nothing to steal")),
     }
 }

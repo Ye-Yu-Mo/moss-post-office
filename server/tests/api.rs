@@ -662,6 +662,44 @@ async fn garden_harvest_and_friend_steal() {
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(json_body(response).await["reward"]["amount"], 3);
 
+    let response = app
+        .clone()
+        .oneshot(auth_request("GET", "/v1/garden", alice_token))
+        .await
+        .unwrap();
+    assert_eq!(json_body(response).await["plots"][0]["empty"], true);
+
+    let response = app
+        .clone()
+        .oneshot(post_json(
+            alice_token,
+            "/v1/garden/plant",
+            json!({ "plot": 0, "crop": "stamp" }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let response = app
+        .clone()
+        .oneshot(post_json(
+            alice_token,
+            "/v1/garden/water",
+            json!({ "plot": 0 }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let response = app
+        .clone()
+        .oneshot(post_json(
+            alice_token,
+            "/v1/garden/water",
+            json!({ "plot": 0 }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
     // Make Alice and Bob friends.
     let response = app
         .clone()
@@ -753,4 +791,16 @@ async fn garden_harvest_and_friend_steal() {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    let response = app
+        .clone()
+        .oneshot(auth_request("GET", "/v1/postcards", alice_token))
+        .await
+        .unwrap();
+    let cards = json_body(response).await;
+    assert!(cards["cards"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|card| card["template"] == "steal_note" && card["sender"] == "gardener_bob"));
 }
