@@ -318,3 +318,139 @@ async fn unauthenticated_requests_are_rejected() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
+
+fn post_json(token: &str, path: &str, body: Value) -> Request<Body> {
+    Request::post(path)
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(body.to_string()))
+        .unwrap()
+}
+
+#[tokio::test]
+async fn social_square_postcards_and_bots() {
+    let (app, _dir) = test_app();
+    let alice = register_ok(
+        &app,
+        "alice_post",
+        Some(json!({ "version": 7, "totalEarned": 5000, "expeditionWins": 2 })),
+    )
+    .await;
+    let bob = register_ok(&app, "bob_post", None).await;
+    let alice_token = alice["token"].as_str().unwrap();
+    let bob_id = bob["user_id"].as_str().unwrap();
+
+    let response = app
+        .clone()
+        .oneshot(auth_request("GET", "/v1/square", alice_token))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let square = json_body(response).await;
+    let players = square["players"].as_array().unwrap();
+    assert!(players.iter().any(|player| player["name"] == "alice_post"));
+    assert!(players.iter().any(|player| player["kind"] == "bot"));
+
+    let response = app
+        .clone()
+        .oneshot(auth_request("GET", "/v1/postcards", alice_token))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let cards = json_body(response).await;
+    let welcome = cards["cards"].as_array().unwrap().first().unwrap();
+    assert_eq!(welcome["sender_kind"], "bot");
+    assert_eq!(welcome["gift_kind"], "ink");
+    let welcome_id = welcome["id"].as_i64().unwrap();
+
+    let response = app
+        .clone()
+        .oneshot(post_json(
+            alice_token,
+            &format!("/v1/postcards/{welcome_id}/claim"),
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let claimed = json_body(response).await;
+    assert_eq!(claimed["gift_kind"], "ink");
+    assert_eq!(claimed["gift_amount"], 2);
+
+    let response = app
+        .clone()
+        .oneshot(post_json(
+            alice_token,
+            &format!("/v1/postcards/{welcome_id}/claim"),
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    let response = app
+        .clone()
+        .oneshot(post_json(
+            alice_token,
+            "/v1/postcards",
+            json!({ "recipient_id": bob_id, "recipient_kind": "user", "template": "hello" }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(json_body(response).await["reply"], false);
+
+    let response = app
+        .clone()
+        .oneshot(auth_request(
+            "GET",
+            "/v1/postcards",
+            bob["token"].as_str().unwrap(),
+        ))
+        .await
+        .unwrap();
+    let bob_cards = json_body(response).await;
+    assert!(bob_cards["cards"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|card| card["sender"] == "alice_post"
+            && card["text"] == "今天邮局门口的苔藓又绿了一点。"));
+
+    // Bot recipients reply immediately with a small gift.
+    let response = app
+        .clone()
+        .oneshot(post_json(
+            alice_token,
+            "/v1/postcards",
+            json!({ "recipient_id": "b_moss", "recipient_kind": "bot", "template": "weather" }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(json_body(response).await["reply"], true);
+
+    // Five sends per rolling day.
+    for _ in 0..3 {
+        let response = app
+            .clone()
+            .oneshot(post_json(
+                alice_token,
+                "/v1/postcards",
+                json!({ "recipient_id": "b_snail", "recipient_kind": "bot", "template": "route" }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+    let response = app
+        .clone()
+        .oneshot(post_json(
+            alice_token,
+            "/v1/postcards",
+            json!({ "recipient_id": "b_star", "recipient_kind": "bot", "template": "star" }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}

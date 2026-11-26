@@ -17,6 +17,7 @@ src/
     auth.rs        注册/登录/注销/me、Bearer 校验
     save.rs        云存档
     events.rs      事件上报
+    social.rs      镇口、明信片、NPC 回信
     health.rs
   auth/
     mod.rs         token、SHA-256、HMAC 校验、用户名归一化
@@ -26,6 +27,7 @@ src/
     users.rs       用户 + verifier
     sessions.rs    会话
     challenges.rs  一次性登录 nonce
+    social.rs      排行榜、明信片、NPC 种子
     saves.rs       存档 + revision
     events.rs      批量写入
 ```
@@ -143,10 +145,21 @@ curl -sS -X POST http://127.0.0.1:17322/v1/events \
 
 每批 1–50 条；`name` 1–64 字节；单条 `data` 序列化后 ≤ 8 KB。
 
+## 镇口与明信片
+
+- `GET /v1/square` 返回按邮票排序的真人玩家和 8 位 NPC；NPC 带 `kind: "bot"` 和 `NPC` 标签，不伪装成真人。
+- `GET /v1/postcards` 返回收到的明信片；第一次访问会自动收到一封 NPC 欢迎信。
+- `POST /v1/postcards` 的正文只允许 4 个预设模板，没有自由文本，避免审核问题。
+  - 寄给真人：对方收件箱出现一张明信片。
+  - 寄给 NPC：NPC 立刻回一张，并附带 1–2 个墨点/材料。
+- 每位玩家 24 小时内最多寄 5 张；`postcard_sends` 记录发送次数。
+- `POST /v1/postcards/{id}/claim` 标记已领取并返回礼物。礼物由客户端写入本地存档（服务端不改存档），属于小额的客户端权威设计。
+- 排行榜只公开用户名、邮票、远行胜场和最后活跃时间，不公开存档。
+
 ## 数据与备份
 
-- 表：`users`、`sessions`、`login_challenges`、`saves`、`events`；SQLite WAL。
-- v1 的匿名表重命名为 `*_v1_legacy`；v2 的 Argon2 密码表重命名为 `*_v2_legacy`，都不会被静默删除。
+- 表：`users`、`sessions`、`login_challenges`、`saves`、`events`、`bots`、`postcards`、`postcard_sends`；SQLite WAL。
+- v1 的匿名表重命名为 `*_v1_legacy`；v2 的 Argon2 密码表重命名为 `*_v2_legacy`，都不会被静默删除。v4 给 `users` 增加公开统计列并创建社交表。
 - `verifier` 是 256 位派生值；它等价于本站的登录密钥，数据库泄露仍会导致账号被冒用，请限制 DB 访问并备份加密。
 - 备份：`sqlite3 data/moss.db ".backup 'backup.db'"`，或停服务后连同 `-wal/-shm` 一起复制。
 - 事件表会持续增长；上线后按周归档或保留 90 天。

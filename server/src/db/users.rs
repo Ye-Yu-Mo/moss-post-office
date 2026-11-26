@@ -100,8 +100,27 @@ impl Db {
     pub async fn touch_login(&self, user_id: String, now: i64) -> Result<(), ApiError> {
         self.call(move |conn| {
             conn.execute(
-                "UPDATE users SET last_login = ?1 WHERE id = ?2",
+                "UPDATE users SET last_login = ?1, last_active = ?1 WHERE id = ?2",
                 params![now, user_id],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
+    pub async fn update_stats(
+        &self,
+        user_id: String,
+        total_stamps: i64,
+        expedition_wins: i64,
+        now: i64,
+    ) -> Result<(), ApiError> {
+        self.call(move |conn| {
+            conn.execute(
+                "UPDATE users
+                 SET total_stamps = ?1, expedition_wins = ?2, last_active = ?3
+                 WHERE id = ?4",
+                params![total_stamps, expedition_wins, now, user_id],
             )?;
             Ok(())
         })

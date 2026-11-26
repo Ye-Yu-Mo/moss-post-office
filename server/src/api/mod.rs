@@ -2,6 +2,7 @@ pub mod auth;
 pub mod events;
 pub mod health;
 pub mod save;
+pub mod social;
 
 use std::{
     sync::Arc,
@@ -28,6 +29,23 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/v1/me", get(auth::me))
         .route("/v1/save", get(save::get_save).put(save::put_save))
         .route("/v1/events", post(events::post_events))
+        .route("/v1/square", get(social::square))
+        .route(
+            "/v1/postcards",
+            get(social::postcards).post(social::send_postcard),
+        )
+        .route("/v1/postcards/{id}/claim", post(social::claim_postcard))
+}
+
+pub(crate) fn public_stats(payload: &serde_json::Value) -> (i64, i64) {
+    let read = |key: &str| -> i64 {
+        payload
+            .get(key)
+            .and_then(|value| value.as_f64())
+            .unwrap_or(0.0)
+            .clamp(0.0, 1e15) as i64
+    };
+    (read("totalEarned"), read("expeditionWins"))
 }
 
 pub(crate) fn now() -> i64 {

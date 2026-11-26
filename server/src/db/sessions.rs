@@ -48,10 +48,14 @@ impl Db {
                     },
                 )
                 .optional()?;
-            if user.is_some() {
+            if let Some(ref user) = user {
                 conn.execute(
                     "UPDATE sessions SET last_seen = ?1 WHERE token_hash = ?2",
                     params![now, token_hash],
+                )?;
+                conn.execute(
+                    "UPDATE users SET last_active = ?1 WHERE id = ?2",
+                    params![now, user.id],
                 )?;
             }
             Ok(user)

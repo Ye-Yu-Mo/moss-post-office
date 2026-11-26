@@ -3,6 +3,7 @@ mod events;
 mod saves;
 mod schema;
 mod sessions;
+mod social;
 mod users;
 
 use std::{path::Path, path::PathBuf, time::Duration};
@@ -14,6 +15,7 @@ use crate::error::ApiError;
 pub use events::NewEvent;
 pub use saves::StoredSave;
 pub use sessions::SessionUser;
+pub use social::{BotSummary, NewPostcard, PostcardRow, SquareUser};
 pub use users::{NewAccount, UserRecord};
 
 /// Small SQLite wrapper. Connections are opened per request; WAL makes that

@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::{
-    api::{now, MAX_SAVE_BYTES, SESSION_SECONDS},
+    api::{now, public_stats, MAX_SAVE_BYTES, SESSION_SECONDS},
     auth,
     db::SessionUser,
     error::ApiError,
@@ -71,6 +71,7 @@ pub async fn register(
         return Err(ApiError::BadRequest("verifier must be 64 hex characters"));
     }
 
+    let stats = request.save.as_ref().map(public_stats);
     let save_payload = match request.save {
         Some(save) => {
             let text = serde_json::to_string(&save)?;
@@ -102,6 +103,13 @@ pub async fn register(
             save_payload,
         })
         .await?;
+
+    if let Some((total_stamps, expedition_wins)) = stats {
+        state
+            .db
+            .update_stats(user_id.clone(), total_stamps, expedition_wins, created_at)
+            .await?;
+    }
 
     Ok(Json(AuthResponse {
         user_id,

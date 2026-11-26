@@ -195,6 +195,13 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     }
   ];
 
+  const POSTCARD_TEMPLATES = [
+    { id: "hello", text: "今天邮局门口的苔藓又绿了一点。" },
+    { id: "weather", text: "雾湖今天很轻，信都顺利上路了。" },
+    { id: "route", text: "替你留意了星港的夜班车，没有晚点。" },
+    { id: "star", text: "月亮出来的时候，替你把最后一张邮票盖好了。" }
+  ];
+
   const WEATHER_DURATION = 150000;
   const WEATHERS = [
     {
@@ -1049,6 +1056,9 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     resetBtn: document.getElementById("resetBtn"),
     accountBtn: document.getElementById("accountBtn"),
     accountLabel: document.getElementById("accountLabel"),
+    townBtn: document.getElementById("townBtn"),
+    townLabel: document.getElementById("townLabel"),
+    townDot: document.getElementById("townDot"),
     saveNote: document.getElementById("saveNote"),
     dayLabel: document.getElementById("dayLabel"),
     toast: document.getElementById("toast"),
@@ -1089,6 +1099,11 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
   let cloudPushTimer = 0;
   let cloudPushing = false;
   let suppressSaves = false;
+  let townData = null;
+  let townLoading = false;
+  let townError = "";
+  let townUnread = 0;
+  let postcardTarget = null;
   let lastFrame = performance.now();
   let lastUiAt = 0;
   let lastGoalAt = 0;
@@ -5592,6 +5607,9 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     if (code === "invalid_credentials") return "用户名或密码不对。";
     if (code === "unauthorized") return "登录已过期，请重新登录。";
     if (error && error.status === 0) return "连不上邮局服务器，检查地址或网络。";
+    if (error && /postcard limit/i.test(error.message || "")) {
+      return "今天已经寄了 5 张明信片，明天再来。";
+    }
     return (error && error.message) || "操作失败，请稍后再试。";
   }
 
@@ -5613,6 +5631,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       "aria-label",
       loggedIn ? `账号 ${account.username}，${cloudStatusText()}` : "登录或注册"
     );
+    updateTownButton();
   }
 
   function accountModalMarkup() {
@@ -5885,6 +5904,8 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
   async function accountLogout() {
     const current = account;
     account = null;
+    townData = null;
+    townUnread = 0;
     cloudApi.clearAccount();
     refreshAccountButton();
     closeModal();
@@ -5920,6 +5941,262 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     account.dirty = true;
     cloudApi.saveAccount(account);
     await cloudPushNow();
+  }
+
+  // ---------- town square + postcards ----------
+
+  function townTime(seconds) {
+    if (!seconds) return "刚刚";
+    const diff = Math.max(0, Math.floor(Date.now() / 1000) - seconds);
+    if (diff < 60) return "刚刚";
+    if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前`;
+    if (diff < 86_400) return `${Math.floor(diff / 3600)} 小时前`;
+    return `${Math.floor(diff / 86_400)} 天前`;
+  }
+
+  function giftLabel(kind, amount) {
+    if (kind === "ink") return `墨点×${amount}`;
+    if (kind === "stamps") return `邮票×${formatNumber(amount)}`;
+    if (EXP_MATERIALS[kind]) return `${EXP_MATERIALS[kind].name}×${amount}`;
+    return `${kind}×${amount}`;
+  }
+
+  function updateTownButton() {
+    if (els.townDot) els.townDot.hidden = townUnread <= 0;
+    if (els.townBtn) {
+      els.townBtn.classList.toggle("has-mail", townUnread > 0);
+      els.townBtn.setAttribute(
+        "aria-label",
+        townUnread > 0 ? `镇口，有 ${townUnread} 封没拆的明信片` : "镇口"
+      );
+    }
+  }
+
+  function townLoggedOutMarkup() {
+    return `
+      <div class="town-box">
+        <p class="town-lead">镇口今天也有邮差路过。登录之后，可以看到镇上的邮差，也能互寄明信片。</p>
+        <div class="town-empty">
+          <p>还没有登录。</p>
+          <button class="primary-btn" type="button" data-town-login>去登录</button>
+        </div>
+      </div>`;
+  }
+
+  function townLoadingMarkup() {
+    return `
+      <div class="town-box">
+        <div class="town-loading">正在打开镇口…</div>
+      </div>`;
+  }
+
+  function townMarkup() {
+    if (!account || !account.token) return townLoggedOutMarkup();
+    if (townLoading) return townLoadingMarkup();
+    if (townError) {
+      return `
+        <div class="town-box">
+          <p class="town-lead">${escapeHtml(townError)}</p>
+          <button class="primary-btn" type="button" data-town-refresh>再试一次</button>
+        </div>`;
+    }
+    if (!townData) return townLoadingMarkup();
+
+    const cards = townData.cards || [];
+    const players = townData.players || [];
+    const mailbox = cards.length
+      ? cards.map((card) => {
+          const unclaimed = card.gift_kind && !card.claimed;
+          return `
+            <article class="town-mail-card${card.sender_kind === "bot" ? " is-bot" : ""}">
+              <div class="town-mail-top">
+                <b>${escapeHtml(card.sender)}</b>
+                <span>${card.sender_kind === "bot" ? "镇上的邮差" : "路过的邮差"}</span>
+              </div>
+              <p>${escapeHtml(card.text)}</p>
+              <div class="town-mail-foot">
+                <small>${townTime(card.created_at)}</small>
+                ${card.gift_kind
+                  ? unclaimed
+                    ? `<button class="link-btn" type="button" data-claim-postcard="${card.id}">收下 ${giftLabel(card.gift_kind, card.gift_amount)}</button>`
+                    : `<span class="town-claimed">已收下 ${giftLabel(card.gift_kind, card.gift_amount)}</span>`
+                  : ""}
+              </div>
+            </article>`;
+        }).join("")
+      : `<div class="town-empty">还没有明信片。去镇口找一位邮差聊聊吧。</div>`;
+
+    const square = players.map((player) => {
+      const self = account && player.id === account.userId;
+      return `
+        <article class="town-player${player.kind === "bot" ? " is-bot" : ""}">
+          <div class="town-player-copy">
+            <div class="town-player-name">
+              <b>${escapeHtml(player.name)}</b>
+              ${player.kind === "bot" ? `<span class="town-npc">NPC</span>` : ""}
+              ${self ? `<span class="town-self">我</span>` : ""}
+            </div>
+            <small>${escapeHtml(player.bio || (player.kind === "bot" ? "镇上的老邮差。" : "路过的邮差。"))}</small>
+          </div>
+          <div class="town-player-stats">
+            <span>${formatNumber(player.total_stamps)} 邮票</span>
+            <span>${formatNumber(player.expedition_wins)} 趟远行</span>
+          </div>
+          <div class="town-player-actions">
+            <small>${townTime(player.last_active)}</small>
+            ${self ? "" : `<button class="link-btn" type="button" data-send-postcard="${escapeHtml(player.id)}" data-send-kind="${player.kind}" data-send-name="${escapeHtml(player.name)}">寄明信片</button>`}
+          </div>
+        </article>`;
+    }).join("");
+
+    return `
+      <div class="town-box">
+        <div class="town-head">
+          <p class="town-lead">镇口的邮差会互寄明信片。真人玩家和 NPC 都会回信，每天最多寄 5 张。</p>
+          <button class="link-btn" type="button" data-town-refresh>刷新</button>
+        </div>
+        <section class="town-section">
+          <div class="tree-head"><span>收到的明信片</span><span>${cards.length} 封</span></div>
+          <div class="town-mail-list">${mailbox}</div>
+        </section>
+        <section class="town-section">
+          <div class="tree-head"><span>镇上的邮差</span><span>按邮票排序</span></div>
+          <div class="town-player-list">${square}</div>
+        </section>
+      </div>`;
+  }
+
+  function renderTownModal() {
+    if (!els.modal || els.modal.hidden) return;
+    if (!els.modalBody.querySelector(".town-box")) return;
+    els.modalBody.innerHTML = townMarkup();
+    updateTownButton();
+  }
+
+  async function loadTown() {
+    if (!account || !account.token) {
+      renderTownModal();
+      return;
+    }
+    townLoading = true;
+    townError = "";
+    renderTownModal();
+    try {
+      const [square, mailbox] = await Promise.all([
+        cloudApi.square(account),
+        cloudApi.postcards(account)
+      ]);
+      townData = {
+        players: Array.isArray(square && square.players) ? square.players : [],
+        cards: Array.isArray(mailbox && mailbox.cards) ? mailbox.cards : []
+      };
+      townUnread = townData.cards.filter((card) => card.gift_kind && !card.claimed).length;
+      townLoading = false;
+      renderTownModal();
+    } catch (error) {
+      townLoading = false;
+      if (error.status === 401) {
+        account.token = "";
+        cloudApi.saveAccount(account);
+        refreshAccountButton();
+      }
+      townError = cloudErrorMessage(error);
+      renderTownModal();
+    }
+  }
+
+  function openTown() {
+    if (!account || !account.token) {
+      openModal({
+        title: "镇口",
+        body: townLoggedOutMarkup(),
+        footer: false,
+        kicker: "苔藓邮局 · 镇口"
+      });
+      return;
+    }
+    townData = null;
+    townError = "";
+    openModal({
+      title: "镇口",
+      body: townLoadingMarkup(),
+      footer: false,
+      kicker: "苔藓邮局 · 镇口"
+    });
+    loadTown();
+  }
+
+  function openPostcardComposer(id, kind, name) {
+    postcardTarget = { id, kind, name };
+    openModal({
+      title: `给 ${name} 寄明信片`,
+      body: `
+        <div class="town-composer">
+          <p class="town-lead">挑一张明信片。对方会收到你的名字和这句话。</p>
+          <div class="town-template-list">
+            ${POSTCARD_TEMPLATES.map((template) => `
+              <button class="town-template" type="button" data-postcard-template="${template.id}">
+                ${template.text}
+              </button>`).join("")}
+          </div>
+          <p class="account-status" id="postcardStatus"></p>
+          <button class="link-btn" type="button" data-town-refresh>回镇口</button>
+        </div>`,
+      footer: false,
+      kicker: "镇口 · 明信片"
+    });
+  }
+
+  async function sendTownPostcard(templateId) {
+    if (!postcardTarget || !account || !account.token) return;
+    const status = document.getElementById("postcardStatus");
+    document.querySelectorAll("[data-postcard-template]").forEach((button) => {
+      button.disabled = true;
+    });
+    if (status) setText(status, "正在把明信片送出去…");
+    try {
+      const result = await cloudApi.sendPostcard(
+        account,
+        postcardTarget.id,
+        postcardTarget.kind,
+        templateId
+      );
+      const replied = Boolean(result && result.reply);
+      showToast(replied ? "明信片寄到了，对方回了一张。" : "明信片已经寄到镇口。", 3600);
+      postcardTarget = null;
+      openTown();
+    } catch (error) {
+      if (status) setText(status, cloudErrorMessage(error));
+      document.querySelectorAll("[data-postcard-template]").forEach((button) => {
+        button.disabled = false;
+      });
+    }
+  }
+
+  async function claimTownPostcard(id) {
+    if (!account || !account.token) return;
+    try {
+      const result = await cloudApi.claimPostcard(account, id);
+      const kind = result && result.gift_kind;
+      const amount = Number(result && result.gift_amount) || 0;
+      if (kind === "ink") addInk(amount);
+      else if (kind === "stamps") addStamps(amount);
+      else if (EXP_MATERIALS[kind]) {
+        state.materials[kind] = Math.min(99, (state.materials[kind] || 0) + amount);
+      }
+      saveGame();
+      refreshLive();
+      showToast(`收下了 ${giftLabel(kind, amount)}。`, 3200);
+      townUnread = Math.max(0, townUnread - 1);
+      loadTown();
+    } catch (error) {
+      if (error.status === 404) {
+        showToast("这张明信片已经收过了。", 2800);
+        loadTown();
+      } else {
+        showToast(cloudErrorMessage(error), 3600);
+      }
+    }
   }
 
   function saveGame(options = {}) {
@@ -6113,6 +6390,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     els.helpBtn.addEventListener("click", openHelpModal);
     els.resetBtn.addEventListener("click", openResetModal);
     if (els.accountBtn) els.accountBtn.addEventListener("click", openAccountModal);
+    if (els.townBtn) els.townBtn.addEventListener("click", openTown);
 
     els.modalCancel.addEventListener("click", closeModal);
     els.modalConfirm.addEventListener("click", () => {
@@ -6129,6 +6407,35 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       applyEventChoice(Number(choice.dataset.eventChoice));
     });
     els.modalBody.addEventListener("click", (event) => {
+      if (event.target.closest("[data-town-refresh]")) {
+        if (els.modalBody.querySelector(".town-composer")) openTown();
+        else loadTown();
+        return;
+      }
+      if (event.target.closest("[data-town-login]")) {
+        closeModal();
+        openAccountModal();
+        return;
+      }
+      const claim = event.target.closest("[data-claim-postcard]");
+      if (claim) {
+        claimTownPostcard(Number(claim.dataset.claimPostcard));
+        return;
+      }
+      const send = event.target.closest("[data-send-postcard]");
+      if (send) {
+        openPostcardComposer(
+          send.dataset.sendPostcard,
+          send.dataset.sendKind,
+          send.dataset.sendName
+        );
+        return;
+      }
+      const template = event.target.closest("[data-postcard-template]");
+      if (template) {
+        sendTownPostcard(template.dataset.postcardTemplate);
+        return;
+      }
       const mode = event.target.closest("[data-account-mode]");
       if (mode) {
         accountMode = mode.dataset.accountMode === "register" ? "register" : "login";

@@ -1,17 +1,20 @@
 use rusqlite::Connection;
 
-pub(super) const SCHEMA_VERSION: i64 = 3;
+pub(super) const SCHEMA_VERSION: i64 = 4;
 
 const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
 
 CREATE TABLE IF NOT EXISTS users (
-    id            TEXT PRIMARY KEY,
-    username      TEXT NOT NULL,
-    username_key  TEXT NOT NULL UNIQUE,
-    verifier      TEXT NOT NULL,
-    created_at    INTEGER NOT NULL,
-    last_login    INTEGER NOT NULL DEFAULT 0
+    id              TEXT PRIMARY KEY,
+    username        TEXT NOT NULL,
+    username_key    TEXT NOT NULL UNIQUE,
+    verifier        TEXT NOT NULL,
+    created_at      INTEGER NOT NULL,
+    last_login      INTEGER NOT NULL DEFAULT 0,
+    total_stamps    INTEGER NOT NULL DEFAULT 0,
+    expedition_wins INTEGER NOT NULL DEFAULT 0,
+    last_active     INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -53,6 +56,48 @@ CREATE TABLE IF NOT EXISTS events (
 
 CREATE INDEX IF NOT EXISTS idx_events_user
     ON events (user_id, id);
+
+CREATE TABLE IF NOT EXISTS bots (
+    id            TEXT PRIMARY KEY,
+    name          TEXT NOT NULL,
+    title         TEXT NOT NULL,
+    bio           TEXT NOT NULL,
+    base_stamps   INTEGER NOT NULL,
+    daily_stamps  INTEGER NOT NULL,
+    base_wins     INTEGER NOT NULL,
+    daily_wins    INTEGER NOT NULL,
+    created_at    INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS postcards (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    sender_id     TEXT NOT NULL,
+    sender_name   TEXT NOT NULL,
+    sender_kind   TEXT NOT NULL,
+    recipient_id  TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    template      TEXT NOT NULL,
+    gift_kind     TEXT,
+    gift_amount   INTEGER NOT NULL DEFAULT 0,
+    created_at    INTEGER NOT NULL,
+    arrives_at    INTEGER NOT NULL,
+    claimed_at    INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_postcards_recipient
+    ON postcards (recipient_id, id);
+
+CREATE INDEX IF NOT EXISTS idx_postcards_sender
+    ON postcards (sender_id, created_at);
+
+CREATE TABLE IF NOT EXISTS postcard_sends (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id        TEXT NOT NULL,
+    recipient_kind TEXT NOT NULL,
+    created_at     INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_postcard_sends_user
+    ON postcard_sends (user_id, created_at);
 "#;
 
 pub(super) fn init(conn: &Connection) -> rusqlite::Result<()> {
@@ -62,7 +107,139 @@ pub(super) fn init(conn: &Connection) -> rusqlite::Result<()> {
         park_v2_password_tables(conn)?;
     }
     conn.execute_batch(SCHEMA)?;
+    ensure_user_stat_columns(conn)?;
+    seed_bots(conn)?;
     conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+    Ok(())
+}
+
+fn column_exists(conn: &Connection, table: &str, column: &str) -> rusqlite::Result<bool> {
+    let count: i64 = conn.query_row(
+        &format!("SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = ?1"),
+        [column],
+        |row| row.get(0),
+    )?;
+    Ok(count > 0)
+}
+
+fn ensure_user_stat_columns(conn: &Connection) -> rusqlite::Result<()> {
+    for (name, ddl) in [
+        ("total_stamps", "INTEGER NOT NULL DEFAULT 0"),
+        ("expedition_wins", "INTEGER NOT NULL DEFAULT 0"),
+        ("last_active", "INTEGER NOT NULL DEFAULT 0"),
+    ] {
+        if !column_exists(conn, "users", name)? {
+            conn.execute_batch(&format!("ALTER TABLE users ADD COLUMN {name} {ddl};"))?;
+        }
+    }
+    Ok(())
+}
+
+fn seed_bots(conn: &Connection) -> rusqlite::Result<()> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs() as i64)
+        .unwrap_or(0);
+    let bots = [
+        (
+            "b_moss",
+            "苔苔",
+            "镇口邮差",
+            "在雾湖边捡邮票，顺手把信送到。",
+            48000,
+            620,
+            6,
+            0,
+        ),
+        (
+            "b_snail",
+            "慢慢",
+            "蜗牛邮差",
+            "走得慢，但从来没有丢过一封信。",
+            32000,
+            410,
+            3,
+            0,
+        ),
+        (
+            "b_plane",
+            "纸飞机",
+            "风里的信使",
+            "顺着风飞，落地时总是刚好。",
+            61000,
+            760,
+            8,
+            1,
+        ),
+        (
+            "b_night",
+            "夜班司机",
+            "星港夜航",
+            "只在月亮出来以后上班。",
+            88000,
+            980,
+            12,
+            1,
+        ),
+        (
+            "b_mushroom",
+            "蘑菇太太",
+            "柜台常客",
+            "喜欢在信封上别一朵小蘑菇。",
+            27000,
+            350,
+            2,
+            0,
+        ),
+        (
+            "b_box",
+            "邮筒先生",
+            "路边邮筒",
+            "吞过很多信，也吐出过很多回信。",
+            41000,
+            520,
+            4,
+            0,
+        ),
+        (
+            "b_star",
+            "星港旅人",
+            "远方来客",
+            "从星港来，带着一身冷风。",
+            73000,
+            840,
+            9,
+            1,
+        ),
+        (
+            "b_boat",
+            "雾湖船夫",
+            "摆渡人",
+            "湖上的信比岸上的慢一点。",
+            36000,
+            460,
+            5,
+            0,
+        ),
+    ];
+    for (id, name, title, bio, base_stamps, daily_stamps, base_wins, daily_wins) in bots {
+        conn.execute(
+            "INSERT OR IGNORE INTO bots
+             (id, name, title, bio, base_stamps, daily_stamps, base_wins, daily_wins, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            rusqlite::params![
+                id,
+                name,
+                title,
+                bio,
+                base_stamps,
+                daily_stamps,
+                base_wins,
+                daily_wins,
+                now
+            ],
+        )?;
+    }
     Ok(())
 }
 

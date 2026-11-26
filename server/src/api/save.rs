@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::{
-    api::{auth::require_user, now, MAX_SAVE_BYTES},
+    api::{auth::require_user, now, public_stats, MAX_SAVE_BYTES},
     error::ApiError,
     AppState,
 };
@@ -58,10 +58,12 @@ pub async fn put_save(
 
     let updated_at = now();
     let client_ts = request.client_ts.clamp(0, updated_at + 86_400);
+    let (total_stamps, expedition_wins) = public_stats(&request.payload);
+    let user_id = context.user.id;
     let outcome = state
         .db
         .put_save(
-            context.user.id,
+            user_id.clone(),
             request.base_revision,
             payload_text,
             client_ts,
@@ -70,7 +72,13 @@ pub async fn put_save(
         .await?;
 
     match outcome {
-        Ok(revision) => Ok(Json(json!({ "revision": revision }))),
+        Ok(revision) => {
+            state
+                .db
+                .update_stats(user_id, total_stamps, expedition_wins, updated_at)
+                .await?;
+            Ok(Json(json!({ "revision": revision })))
+        }
         Err(revision) => Err(ApiError::Conflict(revision)),
     }
 }

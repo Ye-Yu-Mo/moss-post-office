@@ -148,6 +148,34 @@ export async function push(account, payload) {
   });
 }
 
+export async function square(account) {
+  return request(account.base, "/v1/square", { token: account.token });
+}
+
+export async function postcards(account) {
+  return request(account.base, "/v1/postcards", { token: account.token });
+}
+
+export async function sendPostcard(account, recipientId, recipientKind, template) {
+  return request(account.base, "/v1/postcards", {
+    method: "POST",
+    token: account.token,
+    body: {
+      recipient_id: recipientId,
+      recipient_kind: recipientKind,
+      template
+    }
+  });
+}
+
+export async function claimPostcard(account, postcardId) {
+  return request(account.base, `/v1/postcards/${postcardId}/claim`, {
+    method: "POST",
+    token: account.token,
+    body: {}
+  });
+}
+
 export async function logout(account) {
   return request(account.base, "/v1/auth/logout", {
     method: "POST",
