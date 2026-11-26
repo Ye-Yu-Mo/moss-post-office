@@ -834,7 +834,13 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     oilpaper: { name: "油纸", tag: "rain", power: 3, desc: "雨天 +5 通行", unlockWins: 1 },
     compass: { name: "罗盘", tag: "road", power: 2, desc: "道路 +4 通行", unlockWins: 2 },
     thermos: { name: "热水壶", tag: "any", power: 0, desc: "回复 1 封信", heal: 1, unlockWins: 3 },
-    seal: { name: "火漆", tag: "any", power: 3, desc: "任何路况 +3 通行", unlockWins: 5 }
+    seal: { name: "火漆", tag: "any", power: 3, desc: "任何路况 +3 通行", unlockWins: 5 },
+    raincoat: { name: "雨衣", tag: "rain", power: 2, desc: "雨天 +4，失败不掉信", shield: true, unlockWins: 1 },
+    kite: { name: "风筝", tag: "wind", power: 2, desc: "逆风 +4 通行", unlockWins: 2 },
+    stove: { name: "小火炉", tag: "night", power: 2, desc: "夜路 +4，回复 1 封信", heal: 1, unlockWins: 3 },
+    cart: { name: "板车", tag: "road", power: 2, desc: "道路 +4，耗 1 干粮", supplyCost: 1, unlockWins: 4 },
+    ration: { name: "干粮袋", tag: "any", power: 0, desc: "补 2 份干粮", supplyGain: 2, unlockWins: 4 },
+    map: { name: "手绘地图", tag: "any", power: 1, desc: "任何 +1，下一段需求 -1", scout: true, unlockWins: 6 }
   };
 
   const EXP_STARTER = [
@@ -857,6 +863,13 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     { tag: "road", title: "断桥", desc: "桥面塌了一半，邮车过不去。", need: 3 },
     { tag: "night", title: "没有灯的路", desc: "月亮被云遮住，路标看不见了。", need: 4 },
     { tag: "wind", title: "逆风", desc: "风从湖面卷过来，纸飞机飞不动。", need: 3 }
+  ];
+
+  const EXP_BOSSES = [
+    { id: "starport", tag: "night", title: "星港关门", desc: "最后一班星船要开了，信必须在关门前送进去。", need: 4 },
+    { id: "flood", tag: "rain", title: "雾湖涨潮", desc: "湖水漫过了栈桥，最后一段路只剩半截。", need: 4 },
+    { id: "last_bus", tag: "road", title: "最后一班车", desc: "邮车已经发动，轮子陷在泥里，只差最后一推。", need: 3 },
+    { id: "wind_gate", tag: "wind", title: "风口上的星船", desc: "星船停在风口，信要顺着风递上去。", need: 4 }
   ];
 
   const EXP_EVENTS = [
@@ -3108,6 +3121,13 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       options: Array.isArray(raw.options) ? raw.options.filter((option) => option && option.kind).slice(0, 3) : [],
       current: raw.current && typeof raw.current === "object" ? raw.current : null,
       result: raw.result && typeof raw.result === "object" ? raw.result : null,
+      needBonus: raw.needBonus === -1 ? -1 : 0,
+      cardChoice: raw.cardChoice && Array.isArray(raw.cardChoice.options) && cards(raw.cardChoice.options).length
+        ? {
+            source: raw.cardChoice.source === "trade" ? "trade" : "camp",
+            options: cards(raw.cardChoice.options).slice(0, 3)
+          }
+        : null,
       startedAt: numberOr(raw.startedAt)
     };
     if (!exp.result && exp.letters <= 0) exp.letters = 1;
@@ -3123,12 +3143,14 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
   function expeditionOptions(stage) {
     if (stage >= 6) {
       const rate = state.expedition ? state.expedition.rate : 1;
+      const boss = EXP_BOSSES[Math.floor(Math.random() * EXP_BOSSES.length)];
       return [{
         kind: "boss",
-        tag: "night",
-        title: "星港关门",
-        desc: "最后一班星船要开了，信必须在关门前送进去。",
-        need: 4,
+        bossId: boss.id,
+        tag: boss.tag,
+        title: boss.title,
+        desc: boss.desc,
+        need: boss.need,
         stamps: Math.round(rate * 90 + 1500),
         ink: 10
       }];
@@ -3195,6 +3217,8 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       options: [],
       current: null,
       result: null,
+      needBonus: 0,
+      cardChoice: null,
       waxUsed: false,
       startedAt: Date.now()
     };
@@ -3231,7 +3255,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
         if (card && exp.hand.length) {
           exp.deck.push(exp.hand[0]);
           exp.hand[0] = card;
-          expeditionLog("你在星港门口捡到一盏还没熄的灯。");
+          expeditionLog("你在终点前捡到一张还没湿的牌。");
         }
       }
     }
@@ -3362,8 +3386,34 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       </div>`;
   }
 
+  function expeditionCardChoiceMarkup() {
+    const exp = state.expedition;
+    const choice = exp.cardChoice;
+    if (!choice) return "";
+    const trade = choice.source === "trade";
+    return `
+      <div class="exp-encounter">
+        <span class="exp-tag">${trade ? "集市" : "营地"}</span>
+        <h4>${trade ? "货郎摊开三张牌" : "挑一张带走的牌"}</h4>
+        <p>${trade ? "“只换不卖。选一张，付 20 墨点。”" : "火还亮着，你可以从邮袋里挑一张牌塞进背囊。"}</p>
+        <div class="exp-hand exp-card-choice">
+          ${choice.options.map((cardId, index) => {
+            const card = EXP_CARDS[cardId];
+            return `
+              <button class="exp-card" type="button" data-exp-pick-card="${index}">
+                <span class="exp-card-name">${card.name}</span>
+                <small>${card.desc}</small>
+                <b>+${card.power}</b>
+              </button>`;
+          }).join("")}
+        </div>
+        <p class="exp-hint">${trade ? "选好后付 20 墨点；现有 " + formatNumber(state.ink) + " 墨点。" : "免费带走一张，牌会留在这一趟的背囊里。"}</p>
+      </div>`;
+  }
+
   function expeditionCampMarkup() {
     const exp = state.expedition;
+    if (exp.cardChoice) return expeditionCardChoiceMarkup();
     return `
       <div class="exp-encounter">
         <span class="exp-tag">营地</span>
@@ -3377,7 +3427,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
             <b>补 2 份干粮</b><span>干粮 ${exp.supplies}${exp.supplies >= 9 ? " · 背不动了" : ""}</span>
           </button>
           <button class="exp-choice" type="button" data-exp-camp="card">
-            <b>往背囊里塞 1 张牌</b><span>从邮差牌里随机拿一张</span>
+            <b>往背囊里塞 1 张牌</b><span>从三张里挑一张</span>
           </button>
         </div>
       </div>`;
@@ -3385,6 +3435,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
 
   function expeditionTradeMarkup() {
     const exp = state.expedition;
+    if (exp.cardChoice) return expeditionCardChoiceMarkup();
     return `
       <div class="exp-encounter">
         <span class="exp-tag">集市</span>
@@ -3395,7 +3446,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
             <b>80 邮票 → 2 份干粮</b><span>${state.stamps < 80 ? "邮票不够" : `干粮 ${exp.supplies} / 9`}</span>
           </button>
           <button class="exp-choice" type="button" data-exp-trade="card" ${state.ink < 20 ? "disabled" : ""}>
-            <b>20 墨点 → 1 张牌</b><span>${state.ink < 20 ? "墨点不够" : `现有 ${state.ink} 墨点`}</span>
+            <b>20 墨点 → 三选一</b><span>${state.ink < 20 ? "墨点不够" : `现有 ${state.ink} 墨点`}</span>
           </button>
           <button class="exp-choice" type="button" data-exp-trade="leave">
             <b>不换了</b><span>继续赶路</span>
@@ -3437,6 +3488,18 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     const min = Math.min(...pool.map((id) => counts[id] || 0));
     const best = pool.filter((id) => (counts[id] || 0) === min);
     return best[Math.floor(Math.random() * best.length)];
+  }
+
+  function expeditionCardChoiceOptions(count = 3) {
+    const exp = state.expedition;
+    const pool = expeditionUnlockedCardPool();
+    const counts = {};
+    [...exp.deck, ...exp.hand, ...exp.discard].forEach((id) => {
+      counts[id] = (counts[id] || 0) + 1;
+    });
+    const shuffled = expeditionShuffle(pool);
+    shuffled.sort((left, right) => (counts[left] || 0) - (counts[right] || 0));
+    return shuffled.slice(0, count);
   }
 
   function expeditionRewardChoices(success) {
@@ -3639,6 +3702,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     exp.options = [];
     exp.hand = [];
     exp.discard = exp.discard;
+    exp.cardChoice = null;
     expSelection = [];
     if (exp.stage >= 6) {
       finishExpedition(true);
@@ -3669,6 +3733,10 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     exp.options = [];
     exp.hand = [];
     expSelection = [];
+    if ((option.kind === "hazard" || option.kind === "boss") && exp.needBonus) {
+      option.need = Math.max(1, option.need + exp.needBonus);
+      exp.needBonus = 0;
+    }
     if (option.kind === "hazard" || option.kind === "boss") expeditionDrawHand();
     saveGame();
     renderExpedition();
@@ -3727,6 +3795,20 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       }
     }
 
+    const supplyGain = cards.reduce((total, card) => total + (card.supplyGain || 0), 0);
+    if (supplyGain > 0) {
+      const before = exp.supplies;
+      exp.supplies = Math.min(9, exp.supplies + supplyGain);
+      if (exp.supplies > before) {
+        expeditionLog(`你补了 ${exp.supplies - before} 份干粮。`);
+      }
+    }
+
+    if (cards.some((card) => card.scout)) {
+      exp.needBonus = -1;
+      expeditionLog("你在地图上标出一条近路：下一段需求 -1。");
+    }
+
     const detour = cards.some((card) => card.skip);
     if (detour) {
       expeditionLog(`你绕开了${current.title}，多走了几里路。`);
@@ -3764,7 +3846,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     if (exp.letters <= 0) {
       finishExpedition(false);
     } else if (current.kind === "boss") {
-      expeditionLog("星港的灯还亮着，你还有一次机会。");
+      expeditionLog("终点的灯还亮着，你还有一次机会。");
       exp.hand = [];
       expSelection = [];
       expeditionDrawHand();
@@ -3785,9 +3867,10 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       exp.supplies = Math.min(9, exp.supplies + 2);
       expeditionLog("你在营地补了 2 份干粮。");
     } else if (choice === "card") {
-      const id = expeditionRandomUnlockedCard();
-      exp.deck.push(id);
-      expeditionLog(`你在营地捡到一张「${EXP_CARDS[id].name}」。`);
+      exp.cardChoice = { source: "camp", options: expeditionCardChoiceOptions() };
+      saveGame();
+      renderExpedition();
+      return;
     }
     advanceExpedition();
   }
@@ -3804,16 +3887,34 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       exp.supplies = Math.min(9, exp.supplies + 2);
       expeditionLog("你换了 2 份干粮。");
     } else if (choice === "card") {
-      if (!spendInk(20)) {
+      if (state.ink < 20) {
         playDenySound();
         return;
       }
-      const id = expeditionRandomUnlockedCard();
-      exp.deck.push(id);
-      expeditionLog(`货郎给了你一张「${EXP_CARDS[id].name}」。`);
+      exp.cardChoice = { source: "trade", options: expeditionCardChoiceOptions() };
+      saveGame();
+      renderExpedition();
+      return;
     } else {
       expeditionLog("你谢过货郎，继续赶路。");
     }
+    advanceExpedition();
+  }
+
+  function chooseExpeditionCard(index) {
+    const exp = state.expedition;
+    const choice = exp && exp.cardChoice;
+    if (!choice) return;
+    const cardId = choice.options[index];
+    if (!cardId || !EXP_CARDS[cardId]) return;
+    if (choice.source === "trade" && !spendInk(20)) {
+      playDenySound();
+      showToast("墨点不够，先挑别的路吧。", 2600);
+      return;
+    }
+    exp.deck.push(cardId);
+    exp.cardChoice = null;
+    expeditionLog(`你把「${EXP_CARDS[cardId].name}」放进背囊。`);
     advanceExpedition();
   }
 
@@ -5659,6 +5760,8 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       if (option) { chooseExpeditionOption(Number(option.dataset.expOption)); return; }
       const card = event.target.closest("[data-exp-card]");
       if (card) { toggleExpeditionCard(Number(card.dataset.expCard)); return; }
+      const pick = event.target.closest("[data-exp-pick-card]");
+      if (pick) { chooseExpeditionCard(Number(pick.dataset.expPickCard)); return; }
       if (event.target.closest("[data-exp-resolve]") || event.target.closest("[data-exp-resolve-empty]")) {
         resolveExpedition();
         return;
