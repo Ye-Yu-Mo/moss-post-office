@@ -3,10 +3,13 @@ use serde::Serialize;
 
 use crate::{db::Db, error::ApiError};
 
-pub const GARDEN_CROPS: [(&str, &str, i64, i64); 3] = [
-    ("letter", "信封草", 45 * 60, 3),
-    ("stamp", "邮票花", 60 * 60, 3),
-    ("inkberry", "墨莓", 75 * 60, 3),
+pub const GARDEN_CROPS: [(&str, &str, i64, i64, i64); 6] = [
+    ("letter", "信封草", 45 * 60, 3, 0),
+    ("stamp", "邮票花", 60 * 60, 3, 0),
+    ("inkberry", "墨莓", 75 * 60, 3, 0),
+    ("starchild", "星屑花", 90 * 60, 6, 3),
+    ("rainbowvine", "彩纸藤", 80 * 60, 5, 6),
+    ("mooncap", "月光菇", 120 * 60, 6, 9),
 ];
 
 #[derive(Debug, Clone, Serialize)]
@@ -33,29 +36,37 @@ pub struct GardenReward {
 fn name_of(crop: &str) -> &'static str {
     GARDEN_CROPS
         .iter()
-        .find(|(id, _, _, _)| *id == crop)
-        .map(|(_, name, _, _)| *name)
+        .find(|(id, _, _, _, _)| *id == crop)
+        .map(|(_, name, _, _, _)| *name)
         .unwrap_or("空地")
 }
 
 fn duration_of(crop: &str) -> i64 {
     GARDEN_CROPS
         .iter()
-        .find(|(id, _, _, _)| *id == crop)
-        .map(|(_, _, duration, _)| *duration)
+        .find(|(id, _, _, _, _)| *id == crop)
+        .map(|(_, _, duration, _, _)| *duration)
         .unwrap_or(3600)
 }
 
 fn yield_of(crop: &str) -> i64 {
     GARDEN_CROPS
         .iter()
-        .find(|(id, _, _, _)| *id == crop)
-        .map(|(_, _, _, yield_amount)| *yield_amount)
+        .find(|(id, _, _, _, _)| *id == crop)
+        .map(|(_, _, _, yield_amount, _)| *yield_amount)
         .unwrap_or(0)
 }
 
 fn is_crop(crop: &str) -> bool {
-    GARDEN_CROPS.iter().any(|(id, _, _, _)| *id == crop)
+    GARDEN_CROPS.iter().any(|(id, _, _, _, _)| *id == crop)
+}
+
+fn unlock_of(crop: &str) -> i64 {
+    GARDEN_CROPS
+        .iter()
+        .find(|(id, _, _, _, _)| *id == crop)
+        .map(|(_, _, _, _, unlock)| *unlock)
+        .unwrap_or(0)
 }
 
 impl Db {
@@ -67,7 +78,9 @@ impl Db {
     ) -> Result<(), ApiError> {
         self.call(move |conn| {
             let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-            for (index, (crop, _name, duration, _yield)) in GARDEN_CROPS.iter().enumerate() {
+            for (index, (crop, _name, duration, _yield, _unlock)) in
+                GARDEN_CROPS.iter().take(3).enumerate()
+            {
                 let planted_at = if initial_ripe { now - duration } else { now };
                 let ripe_at = if initial_ripe { now } else { now + duration };
                 tx.execute(
@@ -133,6 +146,17 @@ impl Db {
             return Ok(false);
         }
         self.call(move |conn| {
+            let harvests: i64 = conn
+                .query_row(
+                    "SELECT garden_harvests FROM users WHERE id = ?1",
+                    [&owner_id],
+                    |row| row.get(0),
+                )
+                .optional()?
+                .unwrap_or(0);
+            if harvests < unlock_of(&crop) {
+                return Ok(false);
+            }
             let updated = conn.execute(
                 "UPDATE garden_plots
                  SET crop = ?1, planted_at = ?2, ripe_at = ?3, stolen = 0, watered = 0
@@ -206,12 +230,31 @@ impl Db {
                  WHERE owner_id = ?1 AND plot = ?2",
                 params![owner_id, plot],
             )?;
+            tx.execute(
+                "UPDATE users SET garden_harvests = garden_harvests + 1 WHERE id = ?1",
+                [&owner_id],
+            )?;
             tx.commit()?;
             Ok(Some(GardenReward {
                 name: name_of(&crop).to_string(),
                 crop,
                 amount,
             }))
+        })
+        .await
+    }
+
+    pub async fn garden_harvests(&self, user_id: String) -> Result<i64, ApiError> {
+        self.call(move |conn| {
+            let count: i64 = conn
+                .query_row(
+                    "SELECT garden_harvests FROM users WHERE id = ?1",
+                    [user_id],
+                    |row| row.get(0),
+                )
+                .optional()?
+                .unwrap_or(0);
+            Ok(count)
         })
         .await
     }

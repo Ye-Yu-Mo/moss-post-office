@@ -5278,3 +5278,80 @@ h3 {
     grid-column: 2 / 4;
   }
 }
+
+.garden-seed.is-locked {
+  color: var(--muted);
+  opacity: 0.55;
+  cursor: default;
+}
+
+.garden-seed-open {
+  align-self: flex-start;
+  padding: 4px 8px;
+  border: 1px solid color-mix(in srgb, var(--moss) 38%, var(--line));
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--moss-deep);
+  font-family: inherit;
+  font-size: 8.5px;
+  cursor: pointer;
+}
+
+.seed-box {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.seed-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.seed-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.seed-card:hover {
+  border-color: color-mix(in srgb, var(--moss) 42%, var(--line));
+}
+
+.seed-card.is-locked {
+  opacity: 0.56;
+  cursor: default;
+}
+
+.seed-icon .s-icon {
+  width: 28px;
+  height: 28px;
+}
+
+.seed-card b {
+  font-size: 10.5px;
+}
+
+.seed-card small {
+  color: var(--muted);
+  font-size: 8.5px;
+  line-height: 1.4;
+}
+
+.seed-lock {
+  color: var(--moss-deep);
+  font-size: 8px;
+}
+
+.seed-card.is-locked .seed-lock {
+  color: var(--muted);
+}

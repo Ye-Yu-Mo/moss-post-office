@@ -1,6 +1,6 @@
 use rusqlite::Connection;
 
-pub(super) const SCHEMA_VERSION: i64 = 9;
+pub(super) const SCHEMA_VERSION: i64 = 10;
 
 const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS users (
     total_stamps    INTEGER NOT NULL DEFAULT 0,
     expedition_wins INTEGER NOT NULL DEFAULT 0,
     last_active     INTEGER NOT NULL DEFAULT 0,
-    friend_code     TEXT
+    friend_code     TEXT,
+    garden_harvests INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -204,6 +205,7 @@ fn ensure_user_stat_columns(conn: &Connection) -> rusqlite::Result<()> {
         ("expedition_wins", "INTEGER NOT NULL DEFAULT 0"),
         ("last_active", "INTEGER NOT NULL DEFAULT 0"),
         ("friend_code", "TEXT"),
+        ("garden_harvests", "INTEGER NOT NULL DEFAULT 0"),
     ] {
         if !column_exists(conn, "users", name)? {
             conn.execute_batch(&format!("ALTER TABLE users ADD COLUMN {name} {ddl};"))?;

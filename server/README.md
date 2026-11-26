@@ -174,8 +174,12 @@ curl -sS -X POST http://127.0.0.1:17322/v1/events \
 
 ## 后院与偷菜
 
-- 每位用户 3 块地：信封草（45 分钟）、邮票花（60 分钟）、墨莓（75 分钟）。
-- 收完变成空地，需要重新选种；每种作物每轮可以浇一次水，成熟时间 -25%。
+- 每位用户 3 块地，6 种作物：
+  - 信封草 45 分钟（纸×3）、邮票花 60 分钟（邮票×750）、墨莓 75 分钟（墨点×3）
+  - 星屑花 90 分钟（邮票×1,500，累计收 3 次解锁）
+  - 彩纸藤 80 分钟（纸×5，累计收 6 次解锁）
+  - 月光菇 120 分钟（墨点×6，累计收 9 次解锁）
+- 收完变成空地，需要重新选种；每种作物每轮可以浇一次水，成熟时间 -25%；累计收菜次数记录在 `users.garden_harvests`。
 - 收菜：信封草给纸、邮票花给邮票、墨莓给墨点；被偷过的地会少一份（最低 1 份）。
 - 偷菜：仅好友或 NPC；每块地每天一次，单块最多被偷 2 份；NPC 被偷满 2 份后重新生长。
 - 偷好友的菜会给对方留一张预设纸条（`steal_note`），不进每天 5 张寄信额度。
@@ -191,7 +195,7 @@ curl -sS -X POST http://127.0.0.1:17322/v1/events \
 ## 数据与备份
 
 - 表：`users`、`sessions`、`login_challenges`、`saves`、`events`、`bots`、`postcards`、`postcard_sends`、`friend_requests`、`friendships`、`friend_visits`、`collectibles`、`garden_plots`、`garden_steals`；SQLite WAL。
-- v1 的匿名表重命名为 `*_v1_legacy`；v2 的 Argon2 密码表重命名为 `*_v2_legacy`，都不会被静默删除。v4 给 `users` 增加公开统计列并创建社交表；v5 增加 `friend_code` 与好友关系表；v6 增加 `friend_visits`；v7 增加 `collectibles`；v8 增加 `garden_plots` / `garden_steals`；v9 增加浇水状态。
+- v1 的匿名表重命名为 `*_v1_legacy`；v2 的 Argon2 密码表重命名为 `*_v2_legacy`，都不会被静默删除。v4 给 `users` 增加公开统计列并创建社交表；v5 增加 `friend_code` 与好友关系表；v6 增加 `friend_visits`；v7 增加 `collectibles`；v8 增加 `garden_plots` / `garden_steals`；v9 增加浇水状态；v10 增加 `users.garden_harvests` 与稀有种子解锁。
 - `verifier` 是 256 位派生值；它等价于本站的登录密钥，数据库泄露仍会导致账号被冒用，请限制 DB 访问并备份加密。
 - 备份：`sqlite3 data/moss.db ".backup 'backup.db'"`，或停服务后连同 `-wal/-shm` 一起复制。
 - 事件表会持续增长；上线后按周归档或保留 90 天。

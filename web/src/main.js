@@ -213,8 +213,46 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     { id: "b_boat", name: "雾湖船夫", title: "摆渡人" }
   ];
 
-  const GARDEN_ICONS = { letter: "letter", stamp: "star", inkberry: "mushroom" };
-  const GARDEN_CROP_NAMES = { letter: "信封草", stamp: "邮票花", inkberry: "墨莓" };
+  const GARDEN_ICONS = {
+    letter: "letter",
+    stamp: "star",
+    inkberry: "mushroom",
+    starchild: "cloud",
+    rainbowvine: "fern",
+    mooncap: "star"
+  };
+  const GARDEN_CROP_NAMES = {
+    letter: "信封草",
+    stamp: "邮票花",
+    inkberry: "墨莓",
+    starchild: "星屑花",
+    rainbowvine: "彩纸藤",
+    mooncap: "月光菇"
+  };
+  const GARDEN_CROP_UNLOCK = {
+    letter: 0,
+    stamp: 0,
+    inkberry: 0,
+    starchild: 3,
+    rainbowvine: 6,
+    mooncap: 9
+  };
+  const GARDEN_CROP_MINUTES = {
+    letter: 45,
+    stamp: 60,
+    inkberry: 75,
+    starchild: 90,
+    rainbowvine: 80,
+    mooncap: 120
+  };
+  const GARDEN_CROP_YIELD = {
+    letter: 3,
+    stamp: 3,
+    inkberry: 3,
+    starchild: 6,
+    rainbowvine: 5,
+    mooncap: 6
+  };
 
   const TOWN_SETS = [
     { id: "town", name: "镇口", bots: ["b_moss", "b_box"], rewardMaterial: "cloth" },
@@ -6135,10 +6173,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
         <article class="garden-plot is-empty">
           <span class="garden-icon" aria-hidden="true">${ICONS.fern}</span>
           <div class="garden-copy"><b>空地</b><small>种点什么？</small></div>
-          <div class="garden-seeds">
-            ${Object.entries(GARDEN_CROP_NAMES).map(([crop, name]) => `
-              <button class="garden-seed" type="button" data-plant-plot="${plot.plot}" data-crop="${crop}">${name}</button>`).join("")}
-          </div>
+          <button class="garden-seed-open" type="button" data-open-seeds="${plot.plot}">选种</button>
         </article>`;
     }
     const ripe = Boolean(plot.ripe);
@@ -6168,19 +6203,57 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
 
   function gardenRewardText(reward) {
     if (!reward) return "";
-    if (reward.crop === "stamp") return `邮票×${formatNumber(reward.amount * 250)}`;
-    if (reward.crop === "inkberry") return `墨点×${reward.amount}`;
+    if (reward.crop === "stamp" || reward.crop === "starchild") {
+      return `邮票×${formatNumber(reward.amount * 250)}`;
+    }
+    if (reward.crop === "inkberry" || reward.crop === "mooncap") {
+      return `墨点×${reward.amount}`;
+    }
     return `纸×${reward.amount}`;
   }
 
   function applyGardenReward(reward) {
     if (!reward) return;
     const amount = Math.max(1, Number(reward.amount) || 1);
-    if (reward.crop === "stamp") addStamps(amount * 250);
-    else if (reward.crop === "inkberry") addInk(amount);
+    if (reward.crop === "stamp" || reward.crop === "starchild") addStamps(amount * 250);
+    else if (reward.crop === "inkberry" || reward.crop === "mooncap") addInk(amount);
     else state.materials.paper = Math.min(99, (state.materials.paper || 0) + amount);
     saveGame();
     refreshLive();
+  }
+
+  function gardenCropRewardText(crop, amount) {
+    if (crop === "stamp" || crop === "starchild") {
+      return `邮票×${formatNumber(amount * 250)}`;
+    }
+    if (crop === "inkberry" || crop === "mooncap") return `墨点×${amount}`;
+    return `纸×${amount}`;
+  }
+
+  function openSeedModal(plot) {
+    const harvests = (townData && townData.garden && townData.garden.harvests) || 0;
+    openModal({
+      title: "选种",
+      body: `
+        <div class="seed-box">
+          <p class="town-lead">种下的作物会占一块地。收完再选下一轮；稀有种子按累计收菜次数解锁。</p>
+          <div class="seed-grid">
+            ${Object.entries(GARDEN_CROP_NAMES).map(([crop, name]) => {
+              const unlock = GARDEN_CROP_UNLOCK[crop] || 0;
+              const locked = unlock > harvests;
+              return `
+                <button class="seed-card${locked ? " is-locked" : ""}" type="button" data-plant-seed="${plot}" data-crop="${crop}" ${locked ? "disabled" : ""}>
+                  <span class="seed-icon" aria-hidden="true">${ICONS[GARDEN_ICONS[crop] || "letter"]}</span>
+                  <b>${name}</b>
+                  <small>${GARDEN_CROP_MINUTES[crop]} 分钟 · ${gardenCropRewardText(crop, GARDEN_CROP_YIELD[crop])}</small>
+                  <span class="seed-lock">${locked ? `收 ${unlock} 次解锁` : "可以种"}</span>
+                </button>`;
+            }).join("")}
+          </div>
+        </div>`,
+      footer: false,
+      kicker: "后院 · 选种"
+    });
   }
 
   async function plantGardenPlot(plot, crop) {
@@ -6188,7 +6261,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     try {
       await cloudApi.plantPlot(account, plot, crop);
       showToast(`种下了${GARDEN_CROP_NAMES[crop] || "种子"}。`, 2800);
-      await loadTown();
+      openTown();
     } catch (error) {
       showToast(cloudErrorMessage(error), 3200);
     }
@@ -6321,7 +6394,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       ? `<section class="town-section garden-section">
           <div class="tree-head"><span>后院</span><span>${(garden.plots || []).filter((plot) => plot.ripe).length} 块可收</span></div>
           <p class="town-lead">种着信封草、邮票花和墨莓。熟了就收，朋友也可以来偷一把。</p>
-          <div class="garden-grid">${(garden.plots || []).map((plot) => gardenPlotMarkup(plot, { mode: "own" })).join("")}</div>
+          <div class="garden-grid">${(garden.plots || []).map((plot) => gardenPlotMarkup(plot, { mode: "own", harvests: garden.harvests || 0 })).join("")}</div>
         </section>`
       : "";
     const friendSection = `
@@ -7027,9 +7100,14 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
         visitFriendById(visitFriend.dataset.visitFriend);
         return;
       }
-      const plantPlot = event.target.closest("[data-plant-plot]");
-      if (plantPlot) {
-        plantGardenPlot(Number(plantPlot.dataset.plantPlot), plantPlot.dataset.crop);
+      const openSeeds = event.target.closest("[data-open-seeds]");
+      if (openSeeds) {
+        openSeedModal(Number(openSeeds.dataset.openSeeds));
+        return;
+      }
+      const plantSeed = event.target.closest("[data-plant-seed]");
+      if (plantSeed) {
+        plantGardenPlot(Number(plantSeed.dataset.plantSeed), plantSeed.dataset.crop);
         return;
       }
       const waterPlot = event.target.closest("[data-water-plot]");

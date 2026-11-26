@@ -804,3 +804,81 @@ async fn garden_harvest_and_friend_steal() {
         .iter()
         .any(|card| card["template"] == "steal_note" && card["sender"] == "gardener_bob"));
 }
+
+#[tokio::test]
+async fn garden_rare_crops_unlock_after_harvests() {
+    let (app, _dir) = test_app();
+    let grower = register_ok(&app, "rare_grower", None).await;
+    let token = grower["token"].as_str().unwrap();
+
+    let response = app
+        .clone()
+        .oneshot(auth_request("GET", "/v1/garden", token))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    for plot in 0..3 {
+        let response = app
+            .clone()
+            .oneshot(post_json(
+                token,
+                "/v1/garden/harvest",
+                json!({ "plot": plot }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    let response = app
+        .clone()
+        .oneshot(auth_request("GET", "/v1/garden", token))
+        .await
+        .unwrap();
+    let garden = json_body(response).await;
+    assert_eq!(garden["harvests"], 3);
+    assert!(garden["plots"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|plot| plot["empty"] == true));
+
+    let response = app
+        .clone()
+        .oneshot(post_json(
+            token,
+            "/v1/garden/plant",
+            json!({ "plot": 0, "crop": "starchild" }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let response = app
+        .clone()
+        .oneshot(post_json(
+            token,
+            "/v1/garden/plant",
+            json!({ "plot": 1, "crop": "mooncap" }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let response = app
+        .clone()
+        .oneshot(post_json(token, "/v1/garden/water", json!({ "plot": 0 })))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let response = app
+        .clone()
+        .oneshot(auth_request("GET", "/v1/garden", token))
+        .await
+        .unwrap();
+    let garden = json_body(response).await;
+    assert_eq!(garden["plots"][0]["crop"], "starchild");
+    assert_eq!(garden["plots"][0]["watered"], true);
+}
