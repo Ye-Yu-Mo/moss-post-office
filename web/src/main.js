@@ -168,8 +168,34 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     }
   ];
 
-  const WEATHER_DURATION = 150000;
+  const MATERIAL_UPGRADES = [
+    {
+      id: "scriptorium",
+      name: "抄写台",
+      material: "paper",
+      cost: 10,
+      icon: "letter",
+      desc: "每趟远行开局多抄 1 张已解锁的牌。"
+    },
+    {
+      id: "seal_press",
+      name: "封蜡台",
+      material: "wax",
+      cost: 8,
+      icon: "seal",
+      desc: "每趟远行第一次失败不掉信。"
+    },
+    {
+      id: "sewing",
+      name: "缝纫台",
+      material: "cloth",
+      cost: 8,
+      icon: "tote",
+      desc: "每趟远行开局多带 1 封信。"
+    }
+  ];
 
+  const WEATHER_DURATION = 150000;
   const WEATHERS = [
     {
       id: "sunny",
@@ -884,6 +910,12 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     { tag: "wind", title: "逆风", desc: "风从湖面卷过来，纸飞机飞不动。", need: 3 }
   ];
 
+  const EXP_ELITES = [
+    { id: "watchtower", tag: "night", title: "雾里的旧哨站", desc: "哨站里还有一盏没灭的灯，邮袋被锁在铁柜里。", need: 5, material: "wax" },
+    { id: "wreck", tag: "rain", title: "沉船的邮包", desc: "半沉的邮船卡在芦苇里，邮包还系在桅杆上。", need: 5, material: "paper" },
+    { id: "ferry_ruin", tag: "road", title: "废弃的驿站", desc: "驿站的门被风顶住，里面堆着没人取走的布包。", need: 5, material: "cloth" }
+  ];
+
   const EXP_BOSSES = [
     { id: "starport", tag: "night", title: "星港关门", desc: "最后一班星船要开了，信必须在关门前送进去。", need: 4 },
     { id: "flood", tag: "rain", title: "雾湖涨潮", desc: "湖水漫过了栈桥，最后一段路只剩半截。", need: 4 },
@@ -1056,7 +1088,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
 
   function createInitialState(sound = true) {
     return {
-      version: 6,
+      version: 7,
       stamps: 0,
       runEarned: 0,
       totalEarned: 0,
@@ -1080,6 +1112,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       expeditionDeck: [...EXP_STARTER],
       expeditionRelics: [],
       materials: { paper: 0, wax: 0, cloth: 0 },
+      materialUpgrades: [],
       gens: Object.fromEntries(GENERATORS.map((gen) => [gen.id, 0])),
       boughtTotal: Object.fromEntries(GENERATORS.map((gen) => [gen.id, 0])),
       upgrades: [],
@@ -1157,6 +1190,9 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       wax: Math.min(99, Math.floor(numberOr(materials.wax))),
       cloth: Math.min(99, Math.floor(numberOr(materials.cloth)))
     };
+    clean.materialUpgrades = Array.isArray(raw.materialUpgrades)
+      ? [...new Set(raw.materialUpgrades)].filter((id) => MATERIAL_UPGRADES.some((item) => item.id === id))
+      : [];
     clean.expedition = normalizeExpedition(raw.expedition);
     clean.bellActiveUntil = numberOr(raw.bellActiveUntil);
     clean.bellReadyAt = numberOr(raw.bellReadyAt);
@@ -2064,6 +2100,32 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
 
   function buildUpgradePanel() {
     upgradeUi.clear();
+    const materialWorkshop = `
+      <section class="material-workshop">
+        <div class="tree-head">
+          <span>材料工坊</span>
+          <span>${materialSummary()}</span>
+        </div>
+        <p class="tree-note">材料只在远行成功后带回；这里的升级永久生效，转生也会留下。</p>
+        ${MATERIAL_UPGRADES.map((item) => {
+          const purchased = hasMaterialUpgrade(item.id);
+          const affordable = (state.materials[item.material] || 0) >= item.cost;
+          return `
+            <article class="upgrade material-upgrade${purchased ? " purchased" : ""}">
+              <div class="up-icon" aria-hidden="true">${ICONS[item.icon]}</div>
+              <div class="up-copy">
+                <div class="up-name">${item.name}<span class="up-tag">远行 · 永久</span></div>
+                <div class="up-desc">${purchased ? "已经建好，永久生效。" : item.desc}</div>
+              </div>
+              ${purchased
+                ? `<span class="owned-mark">已建成</span>`
+                : `<button class="buy-btn" type="button" data-buy-mat-up="${item.id}" ${affordable ? "" : "disabled"}>
+                     <span class="cost">${item.cost}</span>
+                     <span class="unit">${EXP_MATERIALS[item.material].name}</span>
+                   </button>`}
+            </article>`;
+        }).join("")}
+      </section>`;
     els.panelBody.innerHTML = UPGRADES.map((upgrade) => {
       const purchased = ownedUpgradeSet.has(upgrade.id);
       const unlocked = isUpgradeUnlocked(upgrade);
@@ -2084,7 +2146,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
                  <span class="unit" data-up-unit>邮票</span>
                </button>`}
         </article>`;
-    }).join("");
+    }).join("") + materialWorkshop;
 
     UPGRADES.forEach((upgrade) => {
       const row = els.panelBody.querySelector(`[data-up="${upgrade.id}"]`);
@@ -3127,6 +3189,12 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     );
   }
 
+  function hasMaterialUpgrade(id) {
+    return Boolean(
+      state && Array.isArray(state.materialUpgrades) && state.materialUpgrades.includes(id)
+    );
+  }
+
   function expeditionMaxLetters() {
     return 3 + (hasNode("pack2") ? 1 : 0);
   }
@@ -3196,7 +3264,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       needBonus: raw.needBonus === -1 ? -1 : 0,
       cardChoice: raw.cardChoice && Array.isArray(raw.cardChoice.options) && cards(raw.cardChoice.options).length
         ? {
-            source: raw.cardChoice.source === "trade" ? "trade" : "camp",
+            source: raw.cardChoice.source === "trade" || raw.cardChoice.source === "elite" ? raw.cardChoice.source : "camp",
             options: cards(raw.cardChoice.options).slice(0, 3)
           }
         : null,
@@ -3210,7 +3278,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     if (!exp.result && !exp.options.length && !exp.current) {
       exp.options = expeditionOptions(exp.stage);
     }
-    if (!exp.result && exp.current && (exp.current.kind === "hazard" || exp.current.kind === "boss") && !exp.hand.length) {
+    if (!exp.result && exp.current && (exp.current.kind === "hazard" || exp.current.kind === "boss" || exp.current.kind === "elite") && !exp.hand.length) {
       /* hand is drawn lazily in markup */
     }
     return exp;
@@ -3234,12 +3302,28 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     const tables = {
       1: ["hazard", "hazard"],
       2: ["hazard", "camp"],
-      3: ["trade", "event"],
+      3: ["trade", "event", "elite"],
       4: ["hazard", "hazard"],
-      5: ["camp", "hazard"]
+      5: ["camp", "hazard", "elite"]
     };
     const usedHazards = new Set();
     return (tables[stage] || ["hazard", "hazard"]).map((kind) => {
+      if (kind === "elite") {
+        const elite = EXP_ELITES[Math.floor(expeditionRandom() * EXP_ELITES.length)];
+        const rate = state.expedition ? state.expedition.rate : 1;
+        return {
+          kind: "elite",
+          eliteId: elite.id,
+          tag: elite.tag,
+          title: elite.title,
+          desc: elite.desc,
+          need: elite.need,
+          stamps: Math.round(rate * 60 + 500),
+          ink: 5,
+          material: elite.material,
+          materialQty: 2
+        };
+      }
       if (kind === "camp") {
         return { kind: "camp", tag: "camp", title: "路边营地", desc: "一盏灯，一壶热水。可以歇一脚。" };
       }
@@ -3299,7 +3383,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     const exp = {
       active: true,
       stage: 1,
-      letters: expeditionMaxLetters(),
+      letters: expeditionMaxLetters() + (hasMaterialUpgrade("sewing") ? 1 : 0),
       supplies: Math.min(9, startingSupplies),
       deck: [],
       discard: [],
@@ -3313,7 +3397,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       needBonus: 0,
       cardChoice: null,
       waxUsed: false,
-      prepShield: chosenPrep.includes("wax"),
+      prepShield: chosenPrep.includes("wax") || hasMaterialUpgrade("seal_press"),
       seed,
       rngState: seed,
       startedAt: Date.now()
@@ -3323,6 +3407,10 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     if (chosenPrep.includes("paper")) {
       startingDeck.push(expeditionRandomUnlockedCard());
       expeditionLog("多带的一张牌塞进了背囊。");
+    }
+    if (hasMaterialUpgrade("scriptorium")) {
+      startingDeck.push(expeditionRandomUnlockedCard());
+      expeditionLog("抄写台多抄了一张牌。");
     }
     if (chosenPrep.includes("wax")) expeditionLog("蜡封多封了一道。");
     if (chosenPrep.includes("cloth")) expeditionLog("邮袋加固过，干粮多带了 2 份。");
@@ -3384,6 +3472,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
 
   function expeditionOptionTag(option) {
     if (option.kind === "boss") return "终点";
+    if (option.kind === "elite") return "精英";
     if (option.kind === "camp") return "营地";
     if (option.kind === "trade") return "集市";
     if (option.kind === "event") return "路遇";
@@ -3443,8 +3532,8 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
             <span class="exp-tag">${expeditionOptionTag(option)}</span>
             <b>${option.title}</b>
             <p>${option.desc}</p>
-            <small>${option.kind === "hazard" || option.kind === "boss"
-              ? `需要 ${option.need} 通行 · 回信 +${formatNumber(option.stamps)} 邮票 · +${option.ink} 墨点`
+            <small>${option.kind === "hazard" || option.kind === "boss" || option.kind === "elite"
+              ? `需要 ${option.need} 通行 · 回信 +${formatNumber(option.stamps)} 邮票 · +${option.ink} 墨点${option.kind === "elite" ? " · 胜后挑一张牌" : ""}`
               : option.kind === "camp"
                 ? "补信件 / 补干粮 / 加一张牌"
                 : option.kind === "trade"
@@ -3497,11 +3586,12 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     const choice = exp.cardChoice;
     if (!choice) return "";
     const trade = choice.source === "trade";
+    const elite = choice.source === "elite";
     return `
       <div class="exp-encounter">
-        <span class="exp-tag">${trade ? "集市" : "营地"}</span>
-        <h4>${trade ? "货郎摊开三张牌" : "挑一张带走的牌"}</h4>
-        <p>${trade ? "“只换不卖。选一张，付 20 墨点。”" : "火还亮着，你可以从邮袋里挑一张牌塞进背囊。"}</p>
+        <span class="exp-tag">${elite ? "精英" : trade ? "集市" : "营地"}</span>
+        <h4>${elite ? "旧哨站的战利品" : trade ? "货郎摊开三张牌" : "挑一张带走的牌"}</h4>
+        <p>${elite ? "旧哨站里翻出三张还能用的牌。你只能带走一张。" : trade ? "“只换不卖。选一张，付 20 墨点。”" : "火还亮着，你可以从邮袋里挑一张牌塞进背囊。"}</p>
         <div class="exp-hand exp-card-choice">
           ${choice.options.map((cardId, index) => {
             const card = EXP_CARDS[cardId];
@@ -3513,7 +3603,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
               </button>`;
           }).join("")}
         </div>
-        <p class="exp-hint">${trade ? "选好后付 20 墨点；现有 " + formatNumber(state.ink) + " 墨点。" : "免费带走一张，牌会留在这一趟的背囊里。"}</p>
+        <p class="exp-hint">${trade ? "选好后付 20 墨点；现有 " + formatNumber(state.ink) + " 墨点。" : elite ? "胜者先挑，牌会留在这一趟的背囊里。" : "免费带走一张，牌会留在这一趟的背囊里。"}</p>
       </div>`;
   }
 
@@ -3728,13 +3818,14 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
   function expeditionMarkup() {
     const exp = state.expedition;
     if (!exp) return "";
-    if (!exp.result && exp.current && (exp.current.kind === "hazard" || exp.current.kind === "boss") && !exp.hand.length) {
+    if (!exp.result && exp.current && (exp.current.kind === "hazard" || exp.current.kind === "boss" || exp.current.kind === "elite") && !exp.hand.length) {
       expeditionDrawHand();
     }
-    const maxLetters = expeditionMaxLetters();
+    const maxLetters = Math.max(expeditionMaxLetters(), exp.letters);
     const hearts = "♥".repeat(Math.max(0, exp.letters)) + "♡".repeat(Math.max(0, maxLetters - exp.letters));
     let body = "";
     if (exp.result) body = expeditionResultMarkup();
+    else if (exp.cardChoice) body = expeditionCardChoiceMarkup();
     else if (!exp.current) body = expeditionOptionsMarkup();
     else if (exp.current.kind === "camp") body = expeditionCampMarkup();
     else if (exp.current.kind === "trade") body = expeditionTradeMarkup();
@@ -3786,11 +3877,12 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
         <div class="exp-choices">
           ${Object.entries(EXP_PREP).map(([id, item]) => {
             const isSelected = selected.has(id);
+            const permanent = id === "wax" && hasMaterialUpgrade("seal_press");
             const affordable = (state.materials[id] || 0) >= item.cost;
             return `
-              <button class="exp-choice${isSelected ? " is-selected" : ""}" type="button" data-prep-toggle="${id}" ${!isSelected && !affordable ? "disabled" : ""}>
+              <button class="exp-choice${isSelected ? " is-selected" : ""}" type="button" data-prep-toggle="${id}" ${permanent || (!isSelected && !affordable) ? "disabled" : ""}>
                 <b>${item.name} · ${EXP_MATERIALS[id].name} ${item.cost}</b>
-                <span>${item.desc}${!isSelected && !affordable ? " · 材料不够" : ""}</span>
+                <span>${permanent ? "封蜡台已永久生效" : item.desc + (!isSelected && !affordable ? " · 材料不够" : "")}</span>
               </button>`;
           }).join("")}
         </div>
@@ -3821,6 +3913,10 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
 
   function toggleExpeditionPrep(id) {
     if (!EXP_PREP[id]) return;
+    if (id === "wax" && hasMaterialUpgrade("seal_press")) {
+      playDenySound();
+      return;
+    }
     if (expeditionPrep.has(id)) {
       expeditionPrep.delete(id);
     } else if ((state.materials[id] || 0) >= EXP_PREP[id].cost) {
@@ -3915,11 +4011,11 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     exp.options = [];
     exp.hand = [];
     expSelection = [];
-    if ((option.kind === "hazard" || option.kind === "boss") && exp.needBonus) {
+    if ((option.kind === "hazard" || option.kind === "boss" || option.kind === "elite") && exp.needBonus) {
       option.need = Math.max(1, option.need + exp.needBonus);
       exp.needBonus = 0;
     }
-    if (option.kind === "hazard" || option.kind === "boss") expeditionDrawHand();
+    if (option.kind === "hazard" || option.kind === "boss" || option.kind === "elite") expeditionDrawHand();
     saveGame();
     renderExpedition();
   }
@@ -4017,6 +4113,13 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       });
       const materialText = materialGainText(gainedMaterials);
       expeditionLog(`投递成功：${current.title}，+${formatNumber(current.stamps || 0)} 邮票、+${current.ink || 0} 墨点${materialText ? `、${materialText}` : ""}。`);
+      if (current.kind === "elite") {
+        exp.cardChoice = { source: "elite", options: expeditionCardChoiceOptions() };
+        expeditionLog("旧路尽头有一只没人认领的邮袋。");
+        saveGame();
+        renderExpedition();
+        return;
+      }
       if (current.kind === "boss") {
         finishExpedition(true);
       } else {
@@ -5078,6 +5181,23 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     showToast(`「${upgrade.name}」已经盖进邮册，永久生效。`, 3200);
   }
 
+  function buyMaterialUpgrade(id) {
+    if (!state) return;
+    const item = MATERIAL_UPGRADES.find((candidate) => candidate.id === id);
+    if (!item || hasMaterialUpgrade(id)) return;
+    if ((state.materials[item.material] || 0) < item.cost) {
+      playDenySound();
+      return;
+    }
+    state.materials[item.material] -= item.cost;
+    state.materialUpgrades.push(id);
+    playUpgradeSound();
+    saveGame();
+    buildUpgradePanel();
+    refreshLive();
+    showToast(`「${item.name}」建好了，下一趟远行就会生效。`, 3400);
+  }
+
   function scheduleGolden(minSeconds = 55, maxSeconds = 105) {
     window.clearTimeout(goldenScheduleTimeout);
     const wait = (minSeconds + Math.random() * Math.max(0, maxSeconds - minSeconds)) * 1000;
@@ -5841,6 +5961,11 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       const upgradeButton = event.target.closest("[data-buy-up]");
       if (upgradeButton) {
         buyUpgrade(upgradeButton.dataset.buyUp, event.detail === 0);
+        return;
+      }
+      const materialButton = event.target.closest("[data-buy-mat-up]");
+      if (materialButton) {
+        buyMaterialUpgrade(materialButton.dataset.buyMatUp);
         return;
       }
       if (event.target.closest("[data-expedition-open]")) {
