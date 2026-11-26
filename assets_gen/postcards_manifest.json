@@ -1,0 +1,78 @@
+[
+  {
+    "name": "postcard_b_moss",
+    "size": "1536x1024",
+    "quality": "high",
+    "prompt": "Hand-painted gouache and colored-pencil children's storybook illustration, visible paper grain, soft dark-brown outlines of even weight, muted moss green, warm cream, dusty rose, honey gold and lavender palette, gentle warm light, cozy whimsical Moss Post Office world. No text, no lettering, no numbers, no logo, no watermark, no border, no frame. A vertical-ish postcard scene of a moss-covered post office door at dusk, a tiny lantern, ferns and a red mailbox, a snail-shaped door knocker, warm window light. Wide 3:2 postcard composition, clear focal subject, space around edges."
+  },
+  {
+    "name": "postcard_b_snail",
+    "size": "1536x1024",
+    "quality": "high",
+    "prompt": "Hand-painted gouache and colored-pencil children's storybook illustration, visible paper grain, soft dark-brown outlines of even weight, muted moss green, warm cream, dusty rose, honey gold and lavender palette, gentle warm light, cozy whimsical Moss Post Office world. No text, no lettering, no numbers, no logo, no watermark, no border, no frame. A postcard scene of a cute garden snail carrying a tiny leather mail satchel along a winding forest path, mushrooms and ferns, soft morning mist. Wide 3:2 postcard composition, clear focal subject, space around edges."
+  },
+  {
+    "name": "postcard_b_plane",
+    "size": "1536x1024",
+    "quality": "high",
+    "prompt": "Hand-painted gouache and colored-pencil children's storybook illustration, visible paper grain, soft dark-brown outlines of even weight, muted moss green, warm cream, dusty rose, honey gold and lavender palette, gentle warm light, cozy whimsical Moss Post Office world. No text, no lettering, no numbers, no logo, no watermark, no border, no frame. A postcard scene of a folded paper airplane flying over a misty lake at sunrise, carrying a tiny letter, reeds and distant hills. Wide 3:2 postcard composition, clear focal subject, space around edges."
+  },
+  {
+    "name": "postcard_b_night",
+    "size": "1536x1024",
+    "quality": "high",
+    "prompt": "Hand-painted gouache and colored-pencil children's storybook illustration, visible paper grain, soft dark-brown outlines of even weight, muted moss green, warm cream, dusty rose, honey gold and lavender palette, gentle warm light, cozy whimsical Moss Post Office world. No text, no lettering, no numbers, no logo, no watermark, no border, no frame. A postcard scene of a small night bus with warm windows driving under a crescent moon and stars, dark mossy trees and a winding road. Wide 3:2 postcard composition, clear focal subject, space around edges."
+  },
+  {
+    "name": "postcard_b_mushroom",
+    "size": "1536x1024",
+    "quality": "high",
+    "prompt": "Hand-painted gouache and colored-pencil children's storybook illustration, visible paper grain, soft dark-brown outlines of even weight, muted moss green, warm cream, dusty rose, honey gold and lavender palette, gentle warm light, cozy whimsical Moss Post Office world. No text, no lettering, no numbers, no logo, no watermark, no border, no frame. A postcard scene of a red-capped mushroom cottage with a tiny mailbox and neatly stacked letters, moss and wildflowers, warm afternoon light. Wide 3:2 postcard composition, clear focal subject, space around edges."
+  },
+  {
+    "name": "postcard_b_box",
+    "size": "1536x1024",
+    "quality": "high",
+    "prompt": "Hand-painted gouache and colored-pencil children's storybook illustration, visible paper grain, soft dark-brown outlines of even weight, muted moss green, warm cream, dusty rose, honey gold and lavender palette, gentle warm light, cozy whimsical Moss Post Office world. No text, no lettering, no numbers, no logo, no watermark, no border, no frame. A postcard scene of a dusty-rose roadside mailbox on a wooden post with its flag raised, tall grass, drifting leaves, soft golden light. Wide 3:2 postcard composition, clear focal subject, space around edges."
+  },
+  {
+    "name": "postcard_b_star",
+    "size": "1536x1024",
+    "quality": "high",
+    "prompt": "Hand-painted gouache and colored-pencil children's storybook illustration, visible paper grain, soft dark-brown outlines of even weight, muted moss green, warm cream, dusty rose, honey gold and lavender palette, gentle warm light, cozy whimsical Moss Post Office world. No text, no lettering, no numbers, no logo, no watermark, no border, no frame. A postcard scene of a tiny traveler with a lantern standing on a starport dock, a small star-shaped boat, deep teal night sky and soft constellations. Wide 3:2 postcard composition, clear focal subject, space around edges."
+  },
+  {
+    "name": "postcard_b_boat",
+    "size": "1536x1024",
+    "quality": "high",
+    "prompt": "Hand-painted gouache and colored-pencil children's storybook illustration, visible paper grain, soft dark-brown outlines of even weight, muted moss green, warm cream, dusty rose, honey gold and lavender palette, gentle warm light, cozy whimsical Moss Post Office world. No text, no lettering, no numbers, no logo, no watermark, no border, no frame. A postcard scene of a little wooden boat with a mail sack gliding across a misty lake, pale moon, reeds and layered hills. Wide 3:2 postcard composition, clear focal subject, space around edges."
+  },
+  {
+    "name": "medal_town",
+    "size": "1024x1024",
+    "quality": "high",
+    "background": "transparent",
+    "prompt": "Hand-painted gouache and colored-pencil children's storybook illustration, visible paper grain, soft dark-brown outlines of even weight, muted moss green, warm cream, dusty rose, honey gold and lavender palette, gentle warm light, cozy whimsical Moss Post Office world. No text, no lettering, no numbers, no logo, no watermark, no border, no frame. A round enamel pin collectible medal, a tiny moss post office door and red mailbox inside a cream and moss-green ring, brass rim, subtle paper texture. Centered single round medal, generous transparent padding, no shadow crossing the edge."
+  },
+  {
+    "name": "medal_starport",
+    "size": "1024x1024",
+    "quality": "high",
+    "background": "transparent",
+    "prompt": "Hand-painted gouache and colored-pencil children's storybook illustration, visible paper grain, soft dark-brown outlines of even weight, muted moss green, warm cream, dusty rose, honey gold and lavender palette, gentle warm light, cozy whimsical Moss Post Office world. No text, no lettering, no numbers, no logo, no watermark, no border, no frame. A round enamel pin collectible medal, a crescent moon and tiny starport boat inside a deep teal and lavender ring, brass rim, subtle sparkle. Centered single round medal, generous transparent padding, no shadow crossing the edge."
+  },
+  {
+    "name": "medal_mistlake",
+    "size": "1024x1024",
+    "quality": "high",
+    "background": "transparent",
+    "prompt": "Hand-painted gouache and colored-pencil children's storybook illustration, visible paper grain, soft dark-brown outlines of even weight, muted moss green, warm cream, dusty rose, honey gold and lavender palette, gentle warm light, cozy whimsical Moss Post Office world. No text, no lettering, no numbers, no logo, no watermark, no border, no frame. A round enamel pin collectible medal, a small boat on layered misty lake waves inside a pale blue and moss-green ring, brass rim. Centered single round medal, generous transparent padding, no shadow crossing the edge."
+  },
+  {
+    "name": "medal_rain",
+    "size": "1024x1024",
+    "quality": "high",
+    "background": "transparent",
+    "prompt": "Hand-painted gouache and colored-pencil children's storybook illustration, visible paper grain, soft dark-brown outlines of even weight, muted moss green, warm cream, dusty rose, honey gold and lavender palette, gentle warm light, cozy whimsical Moss Post Office world. No text, no lettering, no numbers, no logo, no watermark, no border, no frame. A round enamel pin collectible medal, a paper airplane and three fat raindrops inside a dusty rose and lavender ring, brass rim. Centered single round medal, generous transparent padding, no shadow crossing the edge."
+  }
+]

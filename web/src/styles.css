@@ -5095,3 +5095,154 @@ h3 {
 .postcard-set.is-complete .postcard-set-head b {
   color: var(--moss-deep);
 }
+
+.postcard-art {
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  margin-bottom: 5px;
+  border-radius: 8px;
+  background-color: var(--paper-2);
+  background-position: center;
+  background-size: cover;
+}
+
+.postcard-art-icon {
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--butter) 16%, transparent), transparent 65%),
+    var(--paper-2);
+}
+
+.postcard-art-icon .s-icon {
+  width: 46px;
+  height: 46px;
+}
+
+.garden-section {
+  padding-bottom: 4px;
+}
+
+.garden-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.garden-plot {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--paper);
+}
+
+.garden-plot.is-ripe {
+  border-color: color-mix(in srgb, var(--moss) 42%, var(--line));
+  background: color-mix(in srgb, var(--moss-light) 16%, var(--paper));
+}
+
+.garden-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 9px;
+  background: var(--paper-2);
+}
+
+.garden-icon .s-icon {
+  width: 32px;
+  height: 32px;
+}
+
+.garden-copy {
+  min-width: 0;
+}
+
+.garden-copy b {
+  display: block;
+  color: var(--ink);
+  font-size: 10px;
+}
+
+.garden-copy small {
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.35;
+}
+
+.garden-bar {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--paper-3);
+}
+
+.garden-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--moss) 70%, var(--butter));
+  transition: width 0.3s linear;
+}
+
+.garden-plot .link-btn {
+  align-self: flex-end;
+  font-size: 9px;
+}
+
+@media (max-width: 620px) {
+  .garden-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .garden-plot {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr) auto;
+    align-items: center;
+  }
+
+  .garden-bar {
+    grid-column: 2;
+    width: 100%;
+  }
+
+  .garden-plot .link-btn {
+    grid-column: 3;
+    grid-row: 1 / 3;
+    align-self: center;
+  }
+}
+
+.town-avatar {
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 35% 25%, color-mix(in srgb, var(--butter) 20%, transparent), transparent 65%),
+    var(--paper-2);
+}
+
+.town-avatar .s-icon {
+  width: 22px;
+  height: 22px;
+}
+
+.friend-row {
+  justify-content: flex-start;
+}
+
+.friend-row .friend-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+}

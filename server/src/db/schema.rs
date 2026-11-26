@@ -1,6 +1,6 @@
 use rusqlite::Connection;
 
-pub(super) const SCHEMA_VERSION: i64 = 6;
+pub(super) const SCHEMA_VERSION: i64 = 8;
 
 const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -89,6 +89,41 @@ CREATE TABLE IF NOT EXISTS friend_visits (
 
 CREATE INDEX IF NOT EXISTS idx_friend_visits_friend
     ON friend_visits (friend_id, day);
+
+CREATE TABLE IF NOT EXISTS collectibles (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    kind       TEXT NOT NULL,
+    template   TEXT NOT NULL,
+    edition    INTEGER NOT NULL,
+    serial     INTEGER NOT NULL,
+    image_key  TEXT NOT NULL,
+    minted_at  INTEGER NOT NULL,
+    UNIQUE (user_id, kind, template),
+    UNIQUE (kind, template, serial)
+);
+
+CREATE INDEX IF NOT EXISTS idx_collectibles_user
+    ON collectibles (user_id, kind);
+
+CREATE TABLE IF NOT EXISTS garden_plots (
+    owner_id   TEXT NOT NULL,
+    plot       INTEGER NOT NULL,
+    crop       TEXT NOT NULL,
+    planted_at INTEGER NOT NULL,
+    ripe_at    INTEGER NOT NULL,
+    stolen     INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (owner_id, plot)
+);
+
+CREATE TABLE IF NOT EXISTS garden_steals (
+    thief_id   TEXT NOT NULL,
+    owner_id   TEXT NOT NULL,
+    plot       INTEGER NOT NULL,
+    day        INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (thief_id, owner_id, plot, day)
+);
 
 CREATE TABLE IF NOT EXISTS bots (
     id            TEXT PRIMARY KEY,

@@ -19,6 +19,7 @@ src/
     events.rs      事件上报
     social.rs      镇口、明信片、NPC 回信
     friends.rs     好友码、申请、好友列表、串门
+    garden.rs      后院菜地、收菜、偷菜
     health.rs
   auth/
     mod.rs         token、SHA-256、HMAC 校验、用户名归一化
@@ -30,6 +31,8 @@ src/
     challenges.rs  一次性登录 nonce
     social.rs      排行榜、明信片、NPC 种子
     friends.rs     好友关系与申请
+    garden.rs      菜地计时、收菜、偷菜
+    collectibles.rs 限量编号收藏品
     saves.rs       存档 + revision
     events.rs      批量写入
 ```
@@ -169,10 +172,24 @@ curl -sS -X POST http://127.0.0.1:17322/v1/events \
 - 串门：每位好友每天一次，写入 `friend_visits`，只计数，不掉资源。
 - NPC 每日来信：每个账号每天最多一封，按 UTC 日期选择 NPC 和模板。
 
+## 后院与偷菜
+
+- 每位用户 3 块地：信封草（45 分钟）、邮票花（60 分钟）、墨莓（75 分钟）。
+- 收菜：信封草给纸、邮票花给邮票、墨莓给墨点；被偷过的地会少一份（最低 1 份）。
+- 偷菜：仅好友或 NPC；每块地每天一次，单块最多被偷 2 份；NPC 被偷满 2 份后重新生长。
+- 首次创建菜地时三块地都是熟的，方便马上体验。
+- 奖励由客户端领取后写入本地存档（和明信片礼物一致）。
+
+## 收藏品
+
+- `collectibles` 表记录 kind/template/edition/serial/image_key；每用户每模板只能有一枚。
+- 明信片单版 200 枚，套装徽章 50 枚；serial 由服务端单调分配，超发拒绝。
+- 目前美术使用现有 AI 图标作为占位；完整 AI 插画待图片接口配额恢复后替换。
+
 ## 数据与备份
 
-- 表：`users`、`sessions`、`login_challenges`、`saves`、`events`、`bots`、`postcards`、`postcard_sends`、`friend_requests`、`friendships`、`friend_visits`；SQLite WAL。
-- v1 的匿名表重命名为 `*_v1_legacy`；v2 的 Argon2 密码表重命名为 `*_v2_legacy`，都不会被静默删除。v4 给 `users` 增加公开统计列并创建社交表；v5 增加 `friend_code` 与好友关系表；v6 增加 `friend_visits`。
+- 表：`users`、`sessions`、`login_challenges`、`saves`、`events`、`bots`、`postcards`、`postcard_sends`、`friend_requests`、`friendships`、`friend_visits`、`collectibles`、`garden_plots`、`garden_steals`；SQLite WAL。
+- v1 的匿名表重命名为 `*_v1_legacy`；v2 的 Argon2 密码表重命名为 `*_v2_legacy`，都不会被静默删除。v4 给 `users` 增加公开统计列并创建社交表；v5 增加 `friend_code` 与好友关系表；v6 增加 `friend_visits`；v7 增加 `collectibles`；v8 增加 `garden_plots` / `garden_steals`。
 - `verifier` 是 256 位派生值；它等价于本站的登录密钥，数据库泄露仍会导致账号被冒用，请限制 DB 访问并备份加密。
 - 备份：`sqlite3 data/moss.db ".backup 'backup.db'"`，或停服务后连同 `-wal/-shm` 一起复制。
 - 事件表会持续增长；上线后按周归档或保留 90 天。

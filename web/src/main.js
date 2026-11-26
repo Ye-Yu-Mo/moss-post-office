@@ -213,6 +213,8 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     { id: "b_boat", name: "雾湖船夫", title: "摆渡人" }
   ];
 
+  const GARDEN_ICONS = { letter: "letter", stamp: "star", inkberry: "mushroom" };
+
   const TOWN_SETS = [
     { id: "town", name: "镇口", bots: ["b_moss", "b_box"], rewardMaterial: "cloth" },
     { id: "starport", name: "星港", bots: ["b_night", "b_star"], rewardMaterial: "paper" },
@@ -1152,7 +1154,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
 
   function createInitialState(sound = true) {
     return {
-      version: 9,
+      version: 10,
       stamps: 0,
       runEarned: 0,
       totalEarned: 0,
@@ -1180,6 +1182,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       postcardAlbum: [],
       postcardSetRewards: [],
       postcardAlbumReward: false,
+      collectibles: [],
       gens: Object.fromEntries(GENERATORS.map((gen) => [gen.id, 0])),
       boughtTotal: Object.fromEntries(GENERATORS.map((gen) => [gen.id, 0])),
       upgrades: [],
@@ -1274,6 +1277,20 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       ? [...new Set(raw.postcardSetRewards)].filter((id) => TOWN_SETS.some((set) => set.id === id))
       : [];
     clean.postcardAlbumReward = Boolean(raw.postcardAlbumReward);
+    clean.collectibles = Array.isArray(raw.collectibles)
+      ? raw.collectibles
+          .filter((item) => item && typeof item.kind === "string" && typeof item.template === "string")
+          .map((item) => ({
+            id: Math.floor(numberOr(item.id)),
+            kind: item.kind,
+            template: item.template,
+            edition: Math.max(1, Math.floor(numberOr(item.edition, 1))),
+            serial: Math.max(1, Math.floor(numberOr(item.serial, 1))),
+            image_key: typeof item.image_key === "string" ? item.image_key : item.template,
+            minted_at: numberOr(item.minted_at)
+          }))
+          .slice(-80)
+      : [];
     clean.expedition = normalizeExpedition(raw.expedition);
     clean.bellActiveUntil = numberOr(raw.bellActiveUntil);
     clean.bellReadyAt = numberOr(raw.bellReadyAt);
@@ -2368,21 +2385,27 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
           );
           const count = entries.filter(Boolean).length;
           const rewarded = state.postcardSetRewards.includes(set.id);
+          const medal = collectibleFor("medal", set.id);
           return `
             <div class="postcard-set${count === set.bots.length ? " is-complete" : ""}">
               <div class="postcard-set-head">
                 <b>${set.name}</b>
-                <span>${count} / ${set.bots.length}${rewarded ? " · 已领" : count === set.bots.length ? " · 已集齐" : ""}</span>
+                <span>${medal ? `徽章 #${medal.serial} / ${medal.edition} · ` : ""}${count} / ${set.bots.length}${rewarded ? " · 已领" : count === set.bots.length ? " · 已集齐" : ""}</span>
               </div>
               <div class="postcard-grid">
                 ${set.bots.map((botId, index) => {
                   const bot = TOWN_BOTS.find((candidate) => candidate.id === botId);
                   const entry = entries[index];
+                  const collectible = collectibleFor("postcard", botId);
                   return `
                     <article class="postcard-slot${entry ? " is-collected" : ""}">
+                      ${entry ? `<span class="postcard-art postcard-art-icon" aria-hidden="true">${ICONS[{
+                        b_moss: "letter", b_snail: "fern", b_plane: "plane", b_night: "star",
+                        b_mushroom: "mushroom", b_box: "mailbox", b_star: "star", b_boat: "boat"
+                      }[botId] || "letter"]}</span>` : ""}
                       <div class="postcard-slot-top">
                         <b>${bot ? bot.name : botId}</b>
-                        <span>${bot ? bot.title : ""}</span>
+                        <span>${collectible ? `#${collectible.serial} / ${collectible.edition}` : bot ? bot.title : ""}</span>
                       </div>
                       <p>${entry ? escapeHtml(entry.text || "已经收进邮册。") : "还没收到这位邮差的明信片。"}</p>
                       <small>${entry ? "已收进邮册" : "去镇口寄一张"}</small>
@@ -5687,6 +5710,15 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     if (error && /request already pending/i.test(error.message || "")) {
       return "已经发过申请了，等对方接受。";
     }
+    if (error && /crop is not ripe/i.test(error.message || "")) {
+      return "还没熟，再等等。";
+    }
+    if (error && /nothing to steal/i.test(error.message || "")) {
+      return "这块地已经被偷过了，换一块吧。";
+    }
+    if (error && /cannot steal from yourself/i.test(error.message || "")) {
+      return "不能偷自己的菜。";
+    }
     if (error && /invalid friend code/i.test(error.message || "")) {
       return "好友码是 6 位。";
     }
@@ -6037,11 +6069,145 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     return `${Math.floor(diff / 86_400)} 天前`;
   }
 
+  function townAvatar(name) {
+    const icons = ["snail", "mushroom", "plane", "star", "mailbox", "letter", "tote", "boat", "fern", "wind"];
+    let hash = 0;
+    for (const character of String(name || "")) {
+      hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
+    }
+    return `<span class="town-avatar" aria-hidden="true">${ICONS[icons[hash % icons.length]]}</span>`;
+  }
+
   function giftLabel(kind, amount) {
     if (kind === "ink") return `墨点×${amount}`;
     if (kind === "stamps") return `邮票×${formatNumber(amount)}`;
     if (EXP_MATERIALS[kind]) return `${EXP_MATERIALS[kind].name}×${amount}`;
     return `${kind}×${amount}`;
+  }
+
+  function mergeCollectibles(items) {
+    if (!Array.isArray(items) || !items.length) return 0;
+    const map = new Map(
+      state.collectibles.map((item) => [`${item.kind}:${item.template}`, item])
+    );
+    let added = 0;
+    items.forEach((item) => {
+      if (!item || typeof item.kind !== "string" || typeof item.template !== "string") return;
+      const key = `${item.kind}:${item.template}`;
+      if (map.has(key)) return;
+      map.set(key, item);
+      added += 1;
+    });
+    if (added) state.collectibles = [...map.values()].slice(-80);
+    return added;
+  }
+
+  function collectibleFor(kind, template) {
+    return state.collectibles.find(
+      (item) => item.kind === kind && item.template === template
+    );
+  }
+
+  function gardenPercent(plot) {
+    const total = Math.max(1, plot.ripe_at - plot.planted_at);
+    if (plot.ripe) return 100;
+    return Math.min(100, Math.max(0, ((Date.now() / 1000 - plot.planted_at) / total) * 100));
+  }
+
+  function gardenPlotMarkup(plot, options = {}) {
+    const ripe = Boolean(plot.ripe);
+    const iconName = GARDEN_ICONS[plot.crop] || "letter";
+    const status = ripe
+      ? "可以收了"
+      : `还差 ${formatDuration(Math.max(0, plot.ripe_at - Date.now() / 1000))}`;
+    const action = options.mode === "own"
+      ? `<button class="link-btn" type="button" data-harvest-plot="${plot.plot}" ${ripe ? "" : "disabled"}>收菜</button>`
+      : `<button class="link-btn" type="button" data-steal-plot="${plot.plot}" data-owner-id="${escapeHtml(options.ownerId || "")}" ${ripe ? "" : "disabled"}>偷一把</button>`;
+    return `
+      <article class="garden-plot${ripe ? " is-ripe" : ""}">
+        <span class="garden-icon" aria-hidden="true">${ICONS[iconName]}</span>
+        <div class="garden-copy">
+          <b>${plot.name}</b>
+          <small>${status}${plot.stolen ? ` · 被偷 ${plot.stolen} 份` : ""}</small>
+        </div>
+        <div class="garden-bar"><span style="width:${Math.round(gardenPercent(plot))}%"></span></div>
+        ${action}
+      </article>`;
+  }
+
+  function gardenRewardText(reward) {
+    if (!reward) return "";
+    if (reward.crop === "stamp") return `邮票×${formatNumber(reward.amount * 250)}`;
+    if (reward.crop === "inkberry") return `墨点×${reward.amount}`;
+    return `纸×${reward.amount}`;
+  }
+
+  function applyGardenReward(reward) {
+    if (!reward) return;
+    const amount = Math.max(1, Number(reward.amount) || 1);
+    if (reward.crop === "stamp") addStamps(amount * 250);
+    else if (reward.crop === "inkberry") addInk(amount);
+    else state.materials.paper = Math.min(99, (state.materials.paper || 0) + amount);
+    saveGame();
+    refreshLive();
+  }
+
+  async function harvestGardenPlot(plot) {
+    if (!account || !account.token) return;
+    try {
+      const result = await cloudApi.harvestPlot(account, plot);
+      applyGardenReward(result.reward);
+      showToast(`收下了 ${gardenRewardText(result.reward)}。`, 3400);
+      await loadTown();
+    } catch (error) {
+      showToast(cloudErrorMessage(error), 3200);
+    }
+  }
+
+  async function stealGardenPlot(ownerId, plot) {
+    if (!account || !account.token) return;
+    try {
+      const result = await cloudApi.stealPlot(account, ownerId, plot);
+      applyGardenReward(result.reward);
+      showToast(`偷到了 ${gardenRewardText(result.reward)}。`, 3400);
+      await openGardenModal(ownerId);
+    } catch (error) {
+      showToast(cloudErrorMessage(error), 3200);
+    }
+  }
+
+  async function openGardenModal(ownerId) {
+    if (!account || !account.token) return;
+    openModal({
+      title: "后院",
+      body: `<div class="town-box"><div class="town-loading">正在推开后门…</div></div>`,
+      footer: false,
+      kicker: "镇口 · 后院"
+    });
+    try {
+      const garden = await cloudApi.friendGarden(account, ownerId);
+      const owner = garden.owner || {};
+      const plots = garden.plots || [];
+      els.modalBody.innerHTML = `
+        <div class="town-box">
+          <div class="town-head">
+            <div>
+              <p class="town-lead">${escapeHtml(owner.name || "一位邮差")} 的后院${owner.kind === "bot" ? " · NPC" : ""}</p>
+              <p class="town-lead">熟了的可以偷一把，每天每块地一次。主人收菜时会少一份。</p>
+            </div>
+            <button class="link-btn" type="button" data-garden-back>回镇口</button>
+          </div>
+          <div class="garden-grid">
+            ${plots.map((plot) => gardenPlotMarkup(plot, { ownerId, mode: "steal" })).join("")}
+          </div>
+        </div>`;
+    } catch (error) {
+      els.modalBody.innerHTML = `
+        <div class="town-box">
+          <p class="town-lead">${escapeHtml(cloudErrorMessage(error))}</p>
+          <button class="primary-btn" type="button" data-garden-back>回镇口</button>
+        </div>`;
+    }
   }
 
   function updateTownButton() {
@@ -6097,6 +6263,14 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     const friendList = friendData.friends || [];
     const incoming = friendData.incoming || [];
     const outgoing = friendData.outgoing || [];
+    const garden = townData.garden || null;
+    const gardenSection = garden
+      ? `<section class="town-section garden-section">
+          <div class="tree-head"><span>后院</span><span>${(garden.plots || []).filter((plot) => plot.ripe).length} 块可收</span></div>
+          <p class="town-lead">种着信封草、邮票花和墨莓。熟了就收，朋友也可以来偷一把。</p>
+          <div class="garden-grid">${(garden.plots || []).map((plot) => gardenPlotMarkup(plot, { mode: "own" })).join("")}</div>
+        </section>`
+      : "";
     const friendSection = `
       <section class="town-section town-friends">
         <div class="tree-head"><span>好友</span><span>${friendList.length} 位</span></div>
@@ -6126,6 +6300,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
         ${friendList.length
           ? `<div class="friend-list">${friendList.map((friend) => `
               <div class="friend-row">
+                ${townAvatar(friend.username)}
                 <div class="friend-copy">
                   <b>${escapeHtml(friend.username)}</b>
                   <small>${formatNumber(friend.total_stamps)} 邮票 · ${formatNumber(friend.expedition_wins)} 趟远行 · ${townTime(friend.last_active)}</small>
@@ -6133,6 +6308,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
                 <div class="friend-actions">
                   <button class="link-btn" type="button" data-send-postcard="${escapeHtml(friend.id)}" data-send-kind="user" data-send-name="${escapeHtml(friend.username)}">寄明信片</button>
                   <button class="link-btn" type="button" data-friend-profile="${escapeHtml(friend.id)}">串门</button>
+                  <button class="link-btn" type="button" data-garden-open="${escapeHtml(friend.id)}">后院</button>
                   <button class="link-btn" type="button" data-visit-friend="${escapeHtml(friend.id)}">留邮戳</button>
                   <button class="link-btn" type="button" data-remove-friend="${escapeHtml(friend.id)}">删除</button>
                 </div>
@@ -6167,6 +6343,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
         <article class="town-player${player.kind === "bot" ? " is-bot" : ""}">
           <div class="town-player-copy">
             <div class="town-player-name">
+              ${townAvatar(player.name)}
               <b>${escapeHtml(player.name)}</b>
               ${player.kind === "bot" ? `<span class="town-npc">NPC</span>` : ""}
               ${self ? `<span class="town-self">我</span>` : ""}
@@ -6179,7 +6356,8 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
           </div>
           <div class="town-player-actions">
             <small>${townTime(player.last_active)}</small>
-            ${self ? "" : `<button class="link-btn" type="button" data-send-postcard="${escapeHtml(player.id)}" data-send-kind="${player.kind}" data-send-name="${escapeHtml(player.name)}">寄明信片</button>`}
+            ${self ? "" : `<button class="link-btn" type="button" data-send-postcard="${escapeHtml(player.id)}" data-send-kind="${player.kind}" data-send-name="${escapeHtml(player.name)}">寄明信片</button>
+            ${player.kind === "bot" ? `<button class="link-btn" type="button" data-garden-open="${escapeHtml(player.id)}">后院</button>` : ""}`}
           </div>
         </article>`;
     }).join("");
@@ -6191,6 +6369,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
           <button class="link-btn" type="button" data-town-refresh>刷新</button>
         </div>
         ${friendSection}
+        ${gardenSection}
         <section class="town-section">
           <div class="tree-head"><span>收到的明信片</span><span>${cards.length} 封</span></div>
           <div class="town-mail-list">${mailbox}</div>
@@ -6218,19 +6397,26 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     townError = "";
     renderTownModal();
     try {
-      const [square, mailbox, friendData] = await Promise.all([
+      const [square, mailbox, friendData, owned, ownGarden] = await Promise.all([
         cloudApi.square(account),
         cloudApi.postcards(account),
-        cloudApi.friends(account)
+        cloudApi.friends(account),
+        cloudApi.collectibles(account),
+        cloudApi.garden(account)
       ]);
+      const addedCollectibles = mergeCollectibles(owned);
+      if (addedCollectibles) saveGame();
       townData = {
         players: Array.isArray(square && square.players) ? square.players : [],
         cards: Array.isArray(mailbox && mailbox.cards) ? mailbox.cards : [],
-        friends: friendData || { code: "", friends: [], incoming: [], outgoing: [] }
+        friends: friendData || { code: "", friends: [], incoming: [], outgoing: [] },
+        collectibles: Array.isArray(owned) ? owned : [],
+        garden: ownGarden || null
       };
       townUnread =
         townData.cards.filter((card) => card.gift_kind && !card.claimed).length +
-        (townData.friends.incoming || []).length;
+        (townData.friends.incoming || []).length +
+        ((townData.garden && townData.garden.plots) || []).filter((plot) => plot.ripe).length;
       townLoading = false;
       renderTownModal();
     } catch (error) {
@@ -6514,6 +6700,9 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       }
       const card = townData && townData.cards.find((candidate) => candidate.id === id);
       const album = addPostcardToAlbum(card);
+      if (result && Array.isArray(result.collectibles)) {
+        mergeCollectibles(result.collectibles);
+      }
       saveGame();
       refreshLive();
       if (album.completed) {
@@ -6783,6 +6972,25 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       const visitFriend = event.target.closest("[data-visit-friend]");
       if (visitFriend) {
         visitFriendById(visitFriend.dataset.visitFriend);
+        return;
+      }
+      const harvestPlot = event.target.closest("[data-harvest-plot]");
+      if (harvestPlot) {
+        harvestGardenPlot(Number(harvestPlot.dataset.harvestPlot));
+        return;
+      }
+      const stealPlot = event.target.closest("[data-steal-plot]");
+      if (stealPlot) {
+        stealGardenPlot(stealPlot.dataset.ownerId, Number(stealPlot.dataset.stealPlot));
+        return;
+      }
+      const gardenOpen = event.target.closest("[data-garden-open]");
+      if (gardenOpen) {
+        openGardenModal(gardenOpen.dataset.gardenOpen);
+        return;
+      }
+      if (event.target.closest("[data-garden-back]")) {
+        openTown();
         return;
       }
       const friendProfile = event.target.closest("[data-friend-profile]");

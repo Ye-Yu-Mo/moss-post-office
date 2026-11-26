@@ -384,6 +384,20 @@ async fn social_square_postcards_and_bots() {
     let claimed = json_body(response).await;
     assert_eq!(claimed["gift_kind"], "ink");
     assert_eq!(claimed["gift_amount"], 2);
+    assert!(!claimed["collectibles"].as_array().unwrap().is_empty());
+
+    let response = app
+        .clone()
+        .oneshot(auth_request("GET", "/v1/collectibles", alice_token))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let owned = json_body(response).await;
+    assert!(owned
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["kind"] == "postcard" && item["edition"] == 200));
 
     let response = app
         .clone()
@@ -613,4 +627,130 @@ async fn friend_code_request_accept_profile_and_remove() {
             .len(),
         0
     );
+}
+
+#[tokio::test]
+async fn garden_harvest_and_friend_steal() {
+    let (app, _dir) = test_app();
+    let alice = register_ok(&app, "gardener_alice", None).await;
+    let bob = register_ok(&app, "gardener_bob", None).await;
+    let carol = register_ok(&app, "gardener_carol", None).await;
+    let alice_token = alice["token"].as_str().unwrap();
+    let bob_token = bob["token"].as_str().unwrap();
+    let carol_token = carol["token"].as_str().unwrap();
+    let alice_id = alice["user_id"].as_str().unwrap();
+
+    let response = app
+        .clone()
+        .oneshot(auth_request("GET", "/v1/garden", alice_token))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let garden = json_body(response).await;
+    assert_eq!(garden["plots"].as_array().unwrap().len(), 3);
+    assert_eq!(garden["plots"][0]["ripe"], true);
+
+    let response = app
+        .clone()
+        .oneshot(post_json(
+            alice_token,
+            "/v1/garden/harvest",
+            json!({ "plot": 0 }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(json_body(response).await["reward"]["amount"], 3);
+
+    // Make Alice and Bob friends.
+    let response = app
+        .clone()
+        .oneshot(auth_request("GET", "/v1/friends", alice_token))
+        .await
+        .unwrap();
+    let code = json_body(response).await["code"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let response = app
+        .clone()
+        .oneshot(post_json(
+            bob_token,
+            "/v1/friends/request",
+            json!({ "code": code }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let response = app
+        .clone()
+        .oneshot(auth_request("GET", "/v1/friends", alice_token))
+        .await
+        .unwrap();
+    let request_id = json_body(response).await["incoming"][0]["id"]
+        .as_i64()
+        .unwrap();
+    let response = app
+        .clone()
+        .oneshot(post_json(
+            alice_token,
+            "/v1/friends/accept",
+            json!({ "id": request_id }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let response = app
+        .clone()
+        .oneshot(auth_request(
+            "GET",
+            &format!("/v1/garden/{alice_id}"),
+            bob_token,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let response = app
+        .clone()
+        .oneshot(post_json(
+            bob_token,
+            &format!("/v1/garden/{alice_id}/steal"),
+            json!({ "plot": 1 }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(json_body(response).await["reward"]["amount"], 1);
+
+    let response = app
+        .clone()
+        .oneshot(post_json(
+            bob_token,
+            &format!("/v1/garden/{alice_id}/steal"),
+            json!({ "plot": 1 }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let response = app
+        .clone()
+        .oneshot(auth_request("GET", "/v1/garden", alice_token))
+        .await
+        .unwrap();
+    let garden = json_body(response).await;
+    assert_eq!(garden["plots"][1]["stolen"], 1);
+
+    let response = app
+        .clone()
+        .oneshot(auth_request(
+            "GET",
+            &format!("/v1/garden/{alice_id}"),
+            carol_token,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }

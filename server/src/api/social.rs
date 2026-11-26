@@ -259,16 +259,36 @@ pub async fn claim_postcard(
     Path(postcard_id): Path<i64>,
 ) -> Result<Json<Value>, ApiError> {
     let context = require_user(&state, &headers).await?;
-    let gift = state
+    let claimed_at = now();
+    let claimed = state
         .db
-        .claim_postcard(context.user.id, postcard_id, now())
+        .claim_postcard(context.user.id.clone(), postcard_id, claimed_at)
         .await?;
-    match gift {
-        Some((kind, amount)) => Ok(Json(json!({
-            "ok": true,
-            "gift_kind": kind,
-            "gift_amount": amount
-        }))),
+    match claimed {
+        Some(claim) => {
+            let mut collectibles = Vec::new();
+            if claim.sender_kind == "bot" && claim.gift_kind.is_some() {
+                collectibles = state
+                    .db
+                    .mint_postcard_collectibles(context.user.id, claim.sender_id, claimed_at)
+                    .await?;
+            }
+            Ok(Json(json!({
+                "ok": true,
+                "gift_kind": claim.gift_kind,
+                "gift_amount": claim.gift_amount,
+                "collectibles": collectibles
+            })))
+        }
         None => Err(ApiError::NotFound("postcard")),
     }
+}
+
+pub async fn collectibles(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<crate::db::Collectible>>, ApiError> {
+    let context = require_user(&state, &headers).await?;
+    let items = state.db.list_collectibles(context.user.id).await?;
+    Ok(Json(items))
 }

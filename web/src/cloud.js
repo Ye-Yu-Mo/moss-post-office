@@ -168,6 +168,36 @@ export async function sendPostcard(account, recipientId, recipientKind, template
   });
 }
 
+export async function garden(account) {
+  return request(account.base, "/v1/garden", { token: account.token });
+}
+
+export async function friendGarden(account, ownerId) {
+  return request(account.base, `/v1/garden/${encodeURIComponent(ownerId)}`, {
+    token: account.token
+  });
+}
+
+export async function harvestPlot(account, plot) {
+  return request(account.base, "/v1/garden/harvest", {
+    method: "POST",
+    token: account.token,
+    body: { plot }
+  });
+}
+
+export async function stealPlot(account, ownerId, plot) {
+  return request(account.base, `/v1/garden/${encodeURIComponent(ownerId)}/steal`, {
+    method: "POST",
+    token: account.token,
+    body: { plot }
+  });
+}
+
+export async function collectibles(account) {
+  return request(account.base, "/v1/collectibles", { token: account.token });
+}
+
 export async function friends(account) {
   return request(account.base, "/v1/friends", { token: account.token });
 }

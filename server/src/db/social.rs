@@ -36,6 +36,13 @@ pub struct PostcardRow {
     pub claimed: bool,
 }
 
+pub struct ClaimedPostcard {
+    pub gift_kind: Option<String>,
+    pub gift_amount: i64,
+    pub sender_id: String,
+    pub sender_kind: String,
+}
+
 pub struct NewPostcard {
     pub sender_id: String,
     pub sender_name: String,
@@ -373,7 +380,7 @@ impl Db {
         user_id: String,
         postcard_id: i64,
         now: i64,
-    ) -> Result<Option<(String, i64)>, ApiError> {
+    ) -> Result<Option<ClaimedPostcard>, ApiError> {
         self.call(move |conn| {
             let updated = conn.execute(
                 "UPDATE postcards SET claimed_at = ?1
@@ -384,12 +391,20 @@ impl Db {
             if updated == 0 {
                 return Ok(None);
             }
-            let gift = conn.query_row(
-                "SELECT gift_kind, gift_amount FROM postcards WHERE id = ?1",
+            let claim = conn.query_row(
+                "SELECT sender_id, sender_kind, gift_kind, gift_amount
+                 FROM postcards WHERE id = ?1",
                 [postcard_id],
-                |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, i64>(1)?)),
+                |row| {
+                    Ok(ClaimedPostcard {
+                        sender_id: row.get(0)?,
+                        sender_kind: row.get(1)?,
+                        gift_kind: row.get(2)?,
+                        gift_amount: row.get(3)?,
+                    })
+                },
             )?;
-            Ok(gift.0.map(|kind| (kind, gift.1)))
+            Ok(Some(claim))
         })
         .await
     }
