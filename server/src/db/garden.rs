@@ -1,4 +1,4 @@
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{params, OptionalExtension, TransactionBehavior};
 use serde::Serialize;
 
 use crate::{db::Db, error::ApiError};
@@ -60,7 +60,7 @@ impl Db {
         initial_ripe: bool,
     ) -> Result<(), ApiError> {
         self.call(move |conn| {
-            let tx = conn.transaction()?;
+            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
             for (index, (crop, _name, duration, _yield)) in GARDEN_CROPS.iter().enumerate() {
                 let planted_at = if initial_ripe { now - duration } else { now };
                 let ripe_at = if initial_ripe { now } else { now + duration };
@@ -116,7 +116,7 @@ impl Db {
         now: i64,
     ) -> Result<Option<GardenReward>, ApiError> {
         self.call(move |conn| {
-            let tx = conn.transaction()?;
+            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
             let row: Option<(String, i64, i64)> = tx
                 .query_row(
                     "SELECT crop, ripe_at, stolen FROM garden_plots
@@ -158,7 +158,7 @@ impl Db {
         reset_on_full: bool,
     ) -> Result<Option<GardenReward>, ApiError> {
         self.call(move |conn| {
-            let tx = conn.transaction()?;
+            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
             let row: Option<(String, i64, i64)> = tx
                 .query_row(
                     "SELECT crop, ripe_at, stolen FROM garden_plots

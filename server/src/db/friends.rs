@@ -1,4 +1,4 @@
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{params, OptionalExtension, TransactionBehavior};
 use serde::Serialize;
 
 use crate::{db::Db, error::ApiError};
@@ -181,7 +181,7 @@ impl Db {
                 )
                 .optional()?;
             if let Some(request_id) = reverse {
-                let tx = conn.transaction()?;
+                let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
                 tx.execute("DELETE FROM friend_requests WHERE id = ?1", [request_id])?;
                 tx.execute(
                     "DELETE FROM friend_requests WHERE from_id = ?1 AND to_id = ?2",
@@ -221,7 +221,7 @@ impl Db {
         now: i64,
     ) -> Result<bool, ApiError> {
         self.call(move |conn| {
-            let tx = conn.transaction()?;
+            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
             let from_id: Option<String> = tx
                 .query_row(
                     "SELECT from_id FROM friend_requests WHERE id = ?1 AND to_id = ?2",

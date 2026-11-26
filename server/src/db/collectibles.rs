@@ -1,4 +1,4 @@
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{params, OptionalExtension, TransactionBehavior};
 use serde::Serialize;
 
 use crate::{db::Db, error::ApiError};
@@ -63,7 +63,7 @@ impl Db {
         now: i64,
     ) -> Result<Option<Collectible>, ApiError> {
         self.call(move |conn| {
-            let tx = conn.transaction()?;
+            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
             let existing: Option<i64> = tx
                 .query_row(
                     "SELECT id FROM collectibles
