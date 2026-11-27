@@ -207,7 +207,9 @@ curl -sS -X POST http://127.0.0.1:17322/v1/events \
 - 迁移在 `server/migrations/`，用 sqlx 在启动时执行并记录版本；SQLite 时代的历史版本由一次性导入工具处理。
 - 历史 SQLite 数据导入：`MOSS_SQLITE_PATH=/path/moss.db MOSS_DATABASE_URL=postgres://... cargo run --bin migrate_sqlite`。工具会清空目标库后按外键顺序导入，并重置自增序列。
 - `verifier` 是 256 位派生值；它等价于本站的登录密钥，数据库泄露仍会导致账号被冒用，请限制 DB 访问并备份加密。
-- 备份：`pg_dump`（Docker 部署用 `docker exec moss-postgres pg_dump -U moss moss > backup.sql`），恢复前先停 moss-sync。
+- 备份：`scripts/backup_postgres.sh` 每天 03:30（`moss-backup.timer`）用 `pg_dump -Fc` 备份到 `/home/jas/games/moss-backups`，保留最近 14 份；写入前用 `pg_restore --list` 校验，文件 600。
+- 监控：`scripts/monitor.sh` 每 5 分钟（`moss-monitor.timer`）检查 Postgres 容器/查询、moss-sync、静态服务、首页与 `/api/healthz`、磁盘；结果写 `/home/jas/games/moss-status/status.json` 和 `monitor.log`，失败时 unit 置为 failed。
+- 目前没有外部告警通道：可以把 `status.json` 接到 Beszel/健康检查服务，或在反代层加告警。
 - 事件表会持续增长；上线后按周归档或保留 90 天。
 
 ## 当前线上部署（HTTP）

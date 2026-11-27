@@ -1,0 +1,7 @@
+[Unit]
+Description=Check Moss Post Office services and PostgreSQL
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/jas/games/moss-sync
+ExecStart=/home/jas/games/moss-sync/scripts/monitor.sh

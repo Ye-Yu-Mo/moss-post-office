@@ -1,0 +1,7 @@
+[Unit]
+Description=Back up the Moss Post Office PostgreSQL database
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/jas/games/moss-sync
+ExecStart=/home/jas/games/moss-sync/scripts/backup_postgres.sh
