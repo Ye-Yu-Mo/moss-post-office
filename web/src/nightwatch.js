@@ -68,6 +68,49 @@ const TOWERS = {
     radius: 1.6,
     unlockNight: 7,
     desc: "每 6 秒在周围炸开一圈月光。"
+  },
+  windbell: {
+    name: "风铃草",
+    icon: "wind",
+    cost: 75,
+    hp: 110,
+    damage: 10,
+    cooldown: 1.6,
+    knockback: 0.35,
+    unlockNight: 4,
+    desc: "风把影子往回推半格。"
+  },
+  rainberry: {
+    name: "雨莓丛",
+    icon: "rain",
+    cost: 85,
+    hp: 120,
+    damage: 8,
+    cooldown: 1.5,
+    poison: 7,
+    poisonFor: 4,
+    unlockNight: 6,
+    desc: "莓汁会留在影子上，持续掉血 4 秒。"
+  },
+  sunlamp: {
+    name: "灯塔花",
+    icon: "sun",
+    cost: 100,
+    hp: 140,
+    aura: 0.25,
+    unlockNight: 8,
+    desc: "相邻八格的植物伤害 +25%。"
+  },
+  belltower: {
+    name: "钟楼",
+    icon: "bell",
+    cost: 160,
+    hp: 160,
+    burst: 20,
+    interval: 8,
+    global: true,
+    unlockNight: 10,
+    desc: "每 8 秒响一次，震到场上所有影子。"
   }
 };
 
@@ -139,6 +182,63 @@ const RECIPES = [
     radius: 2,
     unlockNight: 7,
     desc: "缠绕的月藤墙，会周期性震开影子。"
+  },
+  {
+    id: "gust",
+    a: "windbell",
+    b: "letter",
+    name: "风暴信",
+    icon: "wind",
+    hp: 240,
+    damage: 16,
+    cooldown: 1.1,
+    knockback: 0.5,
+    unlockNight: 10,
+    desc: "一封信卷着风，把影子推得更远。"
+  },
+  {
+    id: "poisonink",
+    a: "rainberry",
+    b: "inkberry",
+    name: "毒墨水",
+    icon: "glue",
+    hp: 250,
+    damage: 12,
+    cooldown: 1.2,
+    poison: 12,
+    poisonFor: 4,
+    slow: 0.4,
+    slowFor: 2.2,
+    unlockNight: 10,
+    desc: "莓汁混着墨，又毒又黏。"
+  },
+  {
+    id: "beacon",
+    a: "sunlamp",
+    b: "starchild",
+    name: "灯塔星",
+    icon: "star",
+    hp: 300,
+    damage: 36,
+    cooldown: 1.6,
+    pierce: true,
+    aura: 0.3,
+    unlockNight: 10,
+    desc: "整行星光，还给旁边的植物添灯。"
+  },
+  {
+    id: "bellmoon",
+    a: "belltower",
+    b: "mooncap",
+    name: "钟月",
+    icon: "sun",
+    hp: 360,
+    burst: 28,
+    interval: 6,
+    global: true,
+    aura: 0.2,
+    unlockNight: 10,
+    desc: "钟声和月光一起落下，全场都听得到。"
   },
   {
     id: "nightcannon",
@@ -541,6 +641,23 @@ export function createNightWatch({
       enemy.slowUntil = simTime + (def.slowFor || 2);
       enemy.slowFactor = 1 - def.slow;
     }
+    if (def && def.poison) {
+      enemy.poisonDps = Math.max(enemy.poisonDps || 0, def.poison);
+      enemy.poisonUntil = simTime + (def.poisonFor || 4);
+    }
+  }
+
+  function auraBonusFor(tower) {
+    let bonus = 0;
+    for (const other of towers) {
+      if (other === tower) continue;
+      const otherDef = UNITS[other.type];
+      if (!otherDef.aura) continue;
+      if (Math.abs(other.row - tower.row) <= 1 && Math.abs(other.col - tower.col) <= 1) {
+        bonus += otherDef.aura;
+      }
+    }
+    return 1 + bonus;
   }
 
   function shoot(tower, def) {
@@ -551,10 +668,11 @@ export function createNightWatch({
         enemy.x - tower.col <= mod.range
     );
     if (!candidates.length) return;
+    const power = def.damage * auraBonusFor(tower);
     if (def.pierce) {
       let far = tower.col;
       for (const enemy of candidates) {
-        hurt(enemy, def.damage, def);
+        hurt(enemy, power, def);
         far = Math.max(far, enemy.x);
       }
       effects.push({ row: tower.row, from: tower.col, to: far, kind: "beam" });
@@ -563,7 +681,10 @@ export function createNightWatch({
       for (const enemy of candidates) {
         if (enemy.x < target.x) target = enemy;
       }
-      hurt(target, def.damage, def);
+      hurt(target, power, def);
+      if (def.knockback && !ENEMIES[target.type].boss) {
+        target.x = Math.min(NW_COLS - 0.5, target.x + def.knockback);
+      }
       effects.push({
         row: tower.row,
         from: tower.col,
@@ -576,14 +697,27 @@ export function createNightWatch({
 
   function burst(tower, def) {
     let hit = 0;
+    const rows = new Set();
     for (const enemy of enemies) {
+      if (def.global) {
+        hurt(enemy, def.burst, def);
+        hit += 1;
+        rows.add(enemy.row);
+        continue;
+      }
       if (enemy.row !== tower.row) continue;
       if (Math.abs(enemy.x - tower.col) <= def.radius) {
         hurt(enemy, def.burst, def);
         hit += 1;
+        rows.add(enemy.row);
       }
     }
-    if (hit) {
+    if (!hit) return;
+    if (def.global) {
+      for (const row of rows) {
+        effects.push({ row, from: 0, to: NW_COLS, kind: "burst" });
+      }
+    } else {
       effects.push({
         row: tower.row,
         from: tower.col - def.radius,
@@ -695,6 +829,12 @@ export function createNightWatch({
     }
 
     updateTowers(dt);
+
+    for (const enemy of enemies) {
+      if (enemy.poisonUntil > simTime) {
+        enemy.hp -= enemy.poisonDps * dt;
+      }
+    }
 
     for (const enemy of enemies) {
       const def = ENEMIES[enemy.type];
@@ -855,6 +995,7 @@ export function createNightWatch({
         col: tower.col,
         fusion: Boolean(tower.fusion),
         tier: tower.tier || 0,
+        aura: Boolean(UNITS[tower.type].aura),
         hp: Math.max(0, Math.round(tower.hp)),
         maxHp: tower.maxHp,
         percent: Math.max(0, Math.round((tower.hp / tower.maxHp) * 100))
@@ -873,6 +1014,8 @@ export function createNightWatch({
         slowed: enemy.slowUntil > simTime,
         boosted: Boolean(enemy.boosted),
         thief: Boolean(def.thief),
+        poisoned: enemy.poisonUntil > simTime,
+        poisonDps: enemy.poisonDps || 0,
         hp: Math.max(0, Math.round(enemy.hp)),
         maxHp: enemy.maxHp,
         percent: Math.max(0, Math.round((enemy.hp / enemy.maxHp) * 100))

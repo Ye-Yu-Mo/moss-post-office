@@ -41,7 +41,7 @@
           :aria-label="cell.tower ? `${cell.tower.name}，生命 ${cell.tower.hp}` : `第 ${cell.row + 1} 行第 ${cell.col + 1} 格`"
           @click="handlers.onCell(cell.col, cell.row)"
         >
-          <span v-if="cell.tower" class="nw-unit" :class="{ 'is-fusion': cell.tower.fusion, 'is-tier2': cell.tower.tier >= 2 }">
+          <span v-if="cell.tower" class="nw-unit" :class="{ 'is-fusion': cell.tower.fusion, 'is-tier2': cell.tower.tier >= 2, 'is-aura': cell.tower.aura }">
             <span class="nw-unit-icon" v-html="icons[cell.tower.icon] || ''"></span>
             <i class="nw-unit-hp"><i :style="{ width: cell.tower.percent + '%' }"></i></i>
           </span>
@@ -53,7 +53,7 @@
           v-for="enemy in snapshot.enemies"
           :key="enemy.id"
           class="nw-enemy"
-          :class="['nw-enemy-' + enemy.type, { 'is-slowed': enemy.slowed, 'is-boss': enemy.boss, 'is-boosted': enemy.boosted }]"
+          :class="['nw-enemy-' + enemy.type, { 'is-slowed': enemy.slowed, 'is-boss': enemy.boss, 'is-boosted': enemy.boosted, 'is-poisoned': enemy.poisoned }]"
           :style="enemyStyle(enemy)"
         >
           <span class="nw-enemy-icon" v-html="icons[enemy.icon] || ''"></span>
