@@ -5511,6 +5511,7 @@ h3 {
   letter-spacing: 0.08em;
 }
 
+.nw-panel-head h2,
 .nw-panel-head h4 {
   margin: 0 0 4px;
   font-family: var(--font-display);
@@ -5861,6 +5862,10 @@ h3 {
 
 .nw-controls .link-btn {
   font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 6px;
 }
 
 .nw-board {
@@ -6116,6 +6121,25 @@ h3 {
   background: rgba(46, 26, 30, 0.9);
 }
 
+/* The result card lives outside the 8:5 board, so it can grow with its text
+   instead of being clipped on narrow phones. */
+.nw-overlay.nw-overlay-done {
+  position: static;
+  inset: auto;
+  border-radius: 14px;
+  padding: 16px 14px;
+  gap: 6px;
+}
+
+.nw-overlay-done:focus-visible {
+  outline: 3px solid var(--butter);
+  outline-offset: 2px;
+}
+
+.nw-overlay-done .nw-overlay-actions {
+  margin-top: 6px;
+}
+
 .nw-overlay-kicker {
   margin: 0;
   color: var(--butter);
@@ -6124,6 +6148,7 @@ h3 {
   letter-spacing: 0.12em;
 }
 
+.nw-overlay h2,
 .nw-overlay h4 {
   margin: 0;
   font-family: var(--font-display);
@@ -6338,6 +6363,10 @@ h3 {
 .nw-modifier .nw-reroll {
   margin-left: auto;
   font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 4px;
 }
 
 .nw-modifier-reward + .nw-reroll {
@@ -6458,6 +6487,7 @@ h3 {
   border: 0;
   background: transparent;
   padding: 6px 16px;
+  min-height: 40px;
   border-radius: 999px;
   font-family: inherit;
   font-size: 12px;
@@ -6917,6 +6947,10 @@ h3 {
 
 .room-head .room-back {
   margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 6px;
 }
 
 @media (max-width: 760px) {
@@ -7077,10 +7111,11 @@ h3 {
 
 .nw-tool {
   width: auto;
+  min-height: 40px;
   display: inline-flex;
-  align-items: baseline;
+  align-items: center;
   gap: 4px;
-  padding: 4px 10px;
+  padding: 8px 12px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--paper);

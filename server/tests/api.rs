@@ -786,6 +786,27 @@ async fn garden_harvest_and_friend_steal() {
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(json_body(response).await["reward"]["amount"], 1);
 
+    // The friend view tells this viewer which plots are already spent for today,
+    // so the UI can disable the steal button instead of failing on click.
+    let response = app
+        .clone()
+        .oneshot(auth_request(
+            "GET",
+            &format!("/v1/garden/{alice_id}"),
+            bob_token,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let friend_garden = json_body(response).await;
+    let friend_plots = friend_garden["plots"].as_array().unwrap();
+    let stolen_plot = friend_plots.iter().find(|plot| plot["plot"] == 1).unwrap();
+    assert_eq!(stolen_plot["stolen_today"], true);
+    assert!(friend_plots
+        .iter()
+        .filter(|plot| plot["plot"] != 1)
+        .all(|plot| plot["stolen_today"] == false));
+
     let response = app
         .clone()
         .oneshot(post_json(
@@ -804,6 +825,7 @@ async fn garden_harvest_and_friend_steal() {
         .unwrap();
     let garden = json_body(response).await;
     assert_eq!(garden["plots"][1]["stolen"], 1);
+    assert_eq!(garden["plots"][1]["stolen_today"], false);
     assert!(garden["crop_stats"]
         .as_array()
         .unwrap()

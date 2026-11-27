@@ -24,6 +24,9 @@ pub struct GardenPlot {
     pub empty: bool,
     pub yield_amount: i64,
     pub ripe: bool,
+    /// Whether the requesting viewer already stole from this plot today.
+    /// Always false for your own garden.
+    pub stolen_today: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -182,6 +185,7 @@ impl Db {
                 watered: row.get::<i64, _>(5) != 0,
                 yield_amount: 0,
                 ripe: !empty && now >= ripe_at,
+                stolen_today: false,
             };
             plot.yield_amount = if plot.empty {
                 0
@@ -191,6 +195,26 @@ impl Db {
             plots.push(plot);
         }
         Ok(plots)
+    }
+
+    /// Plots this viewer already stole from the owner today. Used so the
+    /// friend-garden button does not offer a steal the server would reject.
+    pub async fn stolen_plots_today(
+        &self,
+        thief_id: String,
+        owner_id: String,
+        now: i64,
+    ) -> Result<Vec<i64>, ApiError> {
+        let rows = sqlx::query(
+            "SELECT plot FROM garden_steals
+             WHERE thief_id = $1 AND owner_id = $2 AND day = $3",
+        )
+        .bind(&thief_id)
+        .bind(&owner_id)
+        .bind(now / 86_400)
+        .fetch_all(self.pool())
+        .await?;
+        Ok(rows.into_iter().map(|row| row.get(0)).collect())
     }
 
     pub async fn plant_plot(

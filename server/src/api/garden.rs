@@ -10,6 +10,7 @@ use serde_json::Value;
 
 use crate::{
     api::{auth::require_user, now},
+    db::{Db, GardenPlot},
     error::ApiError,
     AppState,
 };
@@ -63,6 +64,22 @@ pub async fn own_garden(
     }))
 }
 
+async fn mark_stolen_today(
+    db: &Db,
+    thief_id: &str,
+    owner_id: &str,
+    now: i64,
+    plots: &mut [GardenPlot],
+) -> Result<(), ApiError> {
+    let stolen = db
+        .stolen_plots_today(thief_id.to_string(), owner_id.to_string(), now)
+        .await?;
+    for plot in plots.iter_mut() {
+        plot.stolen_today = stolen.contains(&plot.plot);
+    }
+    Ok(())
+}
+
 pub async fn friend_garden(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -78,7 +95,8 @@ pub async fn friend_garden(
             .db
             .ensure_garden(owner_id.clone(), created_at, true)
             .await?;
-        let plots = state.db.garden(owner_id, created_at).await?;
+        let mut plots = state.db.garden(owner_id.clone(), created_at).await?;
+        mark_stolen_today(&state.db, &context.user.id, &owner_id, created_at, &mut plots).await?;
         return Ok(Json(GardenResponse {
             owner: GardenOwner {
                 id: bot.id,
@@ -102,14 +120,15 @@ pub async fn friend_garden(
     }
     let profile = state
         .db
-        .friend_profile(context.user.id, owner_id.clone())
+        .friend_profile(context.user.id.clone(), owner_id.clone())
         .await?
         .ok_or(ApiError::NotFound("garden"))?;
     state
         .db
         .ensure_garden(owner_id.clone(), created_at, true)
         .await?;
-    let plots = state.db.garden(owner_id, created_at).await?;
+    let mut plots = state.db.garden(owner_id.clone(), created_at).await?;
+    mark_stolen_today(&state.db, &context.user.id, &owner_id, created_at, &mut plots).await?;
     Ok(Json(GardenResponse {
         owner: GardenOwner {
             id: profile.friend.id,

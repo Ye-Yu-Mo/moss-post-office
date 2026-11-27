@@ -40,10 +40,11 @@ python3 serve.py 17321  # 只服务 dist/，带 CSP 和 ETag
 
 ```bash
 npm run qa
-# 或 MOSS_QA_BASE=http://47.92.150.181:17321 npm run qa
 ```
 
-`npm run qa:recovery` 验证本地存档损坏时的云端恢复。详见 [`qa/README.md`](qa/README.md)。
+QA 钩子只在 `127.0.0.1/localhost` 构建暴露；线上不包含作弊入口。
+
+`npm run qa:recovery` 验证本地存档损坏时的云端恢复；`npm run qa:multitab` 验证多标签页存档同步；`npm run qa:a11y` 在 320/390px 检查弹窗关闭、守夜结算卡与键盘标签。详见 [`qa/README.md`](qa/README.md)。
 
 单文件离线版（内联脚本、样式和图片）：
 

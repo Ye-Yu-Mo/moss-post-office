@@ -13,6 +13,8 @@
     "standalone": "python3 build_standalone.py",
     "qa": "node qa/rooms.mjs",
     "qa:recovery": "node qa/recovery.mjs",
+    "qa:multitab": "node qa/multitab.mjs",
+    "qa:a11y": "node qa/a11y.mjs",
     "qa:stress": "node qa/stress.mjs"
   },
   "devDependencies": {

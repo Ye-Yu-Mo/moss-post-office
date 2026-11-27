@@ -42,7 +42,7 @@
       <label class="account-field"><span>服务器</span>
         <input id="accountBase" v-model="baseInput" placeholder="http://127.0.0.1:17322">
       </label>
-      <p class="account-status" id="accountStatus">{{ message }}</p>
+      <p class="account-status" id="accountStatus" role="status" aria-live="polite">{{ message }}</p>
       <button class="primary-btn account-submit" type="button" data-account-submit :disabled="busy" @click="submit">
         {{ busy ? "正在处理…" : mode === "register" ? "注册并上传存档" : "登录" }}
       </button>
@@ -51,7 +51,7 @@
 
     <template v-else>
       <p class="account-user">已登录 <b>{{ account.username }}</b></p>
-      <p class="account-status" id="accountStatus">{{ message }}</p>
+      <p class="account-status" id="accountStatus" role="status" aria-live="polite">{{ message }}</p>
       <div v-if="account.conflict" class="account-conflict">
         <p>云端存档比本机新（修订 {{ account.conflict }}）。选一份保留：</p>
         <div class="account-actions">

@@ -1,6 +1,6 @@
 <template>
   <div v-if="snapshot" class="town-box">
-    <div v-if="snapshot.status === 'loading'" class="town-loading">正在敲门…</div>
+    <div v-if="snapshot.status === 'loading'" class="town-loading" role="status" aria-live="polite">正在敲门…</div>
 
     <template v-else-if="snapshot.status === 'error'">
       <p class="town-lead">{{ snapshot.error }}</p>

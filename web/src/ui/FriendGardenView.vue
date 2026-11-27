@@ -1,6 +1,6 @@
 <template>
   <div v-if="snapshot" class="town-box">
-    <div v-if="snapshot.status === 'loading'" class="town-loading">正在推开后门…</div>
+    <div v-if="snapshot.status === 'loading'" class="town-loading" role="status" aria-live="polite">正在推开后门…</div>
 
     <template v-else-if="snapshot.status === 'error'">
       <p class="town-lead">{{ snapshot.error }}</p>
@@ -41,12 +41,18 @@
             </div>
             <div class="garden-bar"><span :style="{ width: plot.percent + '%' }"></span></div>
             <button
-              v-if="plot.ripe"
+              v-if="plot.ripe && !plot.stolenToday && plot.stolen < 2"
               class="link-btn"
               type="button"
               :data-steal-plot="plot.plot"
               @click.stop="$emit('steal', plot.plot)"
             >偷一把</button>
+            <button
+              v-else-if="plot.ripe"
+              class="link-btn"
+              type="button"
+              disabled
+            >{{ plot.stolenToday ? "今天偷过了" : "已经被偷光了" }}</button>
             <button
               v-else-if="!plot.watered"
               class="link-btn"

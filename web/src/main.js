@@ -1264,6 +1264,10 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
   let suppressSaves = false;
   let localSaveProblem = false;
   let cloudRecoveryPending = false;
+  let saveFailureNotified = false;
+  let lastLocalText = "";
+  let lastSaveSignature = "";
+  let lastWriteFailed = false;
   let townData = null;
   let townLoading = false;
   let townError = "";
@@ -1427,13 +1431,22 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
       : [];
     const seenPostcards = new Set();
     clean.postcardAlbum = Array.isArray(raw.postcardAlbum)
-      ? raw.postcardAlbum.filter((entry) => {
-          if (!entry || typeof entry.senderId !== "string") return false;
-          if (!TOWN_BOTS.some((bot) => bot.id === entry.senderId)) return false;
-          if (seenPostcards.has(entry.senderId)) return false;
-          seenPostcards.add(entry.senderId);
-          return true;
-        }).slice(0, TOWN_BOTS.length)
+      ? raw.postcardAlbum
+          .filter((entry) => {
+            if (!entry || typeof entry.senderId !== "string") return false;
+            if (!TOWN_BOTS.some((bot) => bot.id === entry.senderId)) return false;
+            if (seenPostcards.has(entry.senderId)) return false;
+            seenPostcards.add(entry.senderId);
+            return true;
+          })
+          .map((entry) => ({
+            senderId: entry.senderId,
+            senderName: String(entry.senderName || "").slice(0, 32),
+            template: String(entry.template || "").slice(0, 32),
+            text: String(entry.text || "").slice(0, 280),
+            collectedAt: numberOr(entry.collectedAt)
+          }))
+          .slice(0, TOWN_BOTS.length)
       : [];
     clean.postcardSetRewards = Array.isArray(raw.postcardSetRewards)
       ? [...new Set(raw.postcardSetRewards)].filter((id) => TOWN_SETS.some((set) => set.id === id))
@@ -1444,11 +1457,11 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
           .filter((item) => item && typeof item.kind === "string" && typeof item.template === "string")
           .map((item) => ({
             id: Math.floor(numberOr(item.id)),
-            kind: item.kind,
-            template: item.template,
+            kind: String(item.kind).slice(0, 32),
+            template: String(item.template).slice(0, 64),
             edition: Math.max(1, Math.floor(numberOr(item.edition, 1))),
             serial: Math.max(1, Math.floor(numberOr(item.serial, 1))),
-            image_key: typeof item.image_key === "string" ? item.image_key : item.template,
+            image_key: String(item.image_key || item.template).slice(0, 64),
             minted_at: numberOr(item.minted_at)
           }))
           .slice(-80)
@@ -1642,12 +1655,75 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
     }
   }
 
-  function writeSave(payload) {
+  function writeSaveText(text) {
     try {
-      window.localStorage.setItem(SAVE_KEY, JSON.stringify(payload));
+      window.localStorage.setItem(SAVE_KEY, text);
+      lastLocalText = text;
+      lastWriteFailed = false;
+      return true;
     } catch (error) {
-      /* A private window can refuse storage. The game still runs. */
+      /* A private window can refuse storage; the game still runs. */
+      lastWriteFailed = true;
+      return false;
     }
+  }
+
+  function readStoredSaveText() {
+    try {
+      return window.localStorage.getItem(SAVE_KEY);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function writeSave(payload) {
+    return writeSaveText(JSON.stringify(payload));
+  }
+
+  function saveSignature(payload) {
+    const copy = normalizeState(payload);
+    copy.lastSeen = 0;
+    return JSON.stringify(copy);
+  }
+
+  /*
+   * Another tab wrote a newer save. Adopt it in place so this tab cannot
+   * overwrite the newer progress five seconds later with a stale snapshot.
+   * Writes go through the same path from the storage event and from saveGame's
+   * read-before-write check, because background tabs throttle storage events.
+   */
+  function adoptLocalSaveText(text, options = {}) {
+    if (!state || !text || text === lastLocalText) return false;
+    let parsed = null;
+    try {
+      parsed = JSON.parse(text);
+    } catch (error) {
+      return false;
+    }
+    if (!parsed || typeof parsed !== "object") return false;
+    let incomingSignature = "";
+    try {
+      incomingSignature = saveSignature(parsed);
+    } catch (error) {
+      return false;
+    }
+    lastLocalText = text;
+    lastWriteFailed = false;
+    // Only the timestamp moved (the other tab autosaved an idle game).
+    if (incomingSignature === lastSaveSignature) return false;
+    state = normalizeState(parsed);
+    ownedUpgradeSet = new Set(state.upgrades);
+    achievementSet = new Set(state.achievements);
+    goalsDoneSet = new Set(state.goalsDone);
+    ensureOffers();
+    lastSaveSignature = incomingSignature;
+    refreshLive();
+    updateGoals();
+    updateTabBadges();
+    if (options.announce !== false) {
+      showToast("另一个标签页更新了进度，已同步。", 2800);
+    }
+    return true;
   }
 
   function addStamps(amount) {
@@ -6359,7 +6435,7 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
     els.modalCancel.hidden = options.showCancel === false;
     const actions = els.modal.querySelector(".modal-actions");
     if (actions) actions.hidden = options.footer === false;
-    if (els.modalClose) els.modalClose.hidden = options.footer !== false;
+    if (els.modalClose) els.modalClose.hidden = options.showClose === false;
     const card = els.modal.querySelector(".modal-card");
     if (card) card.classList.toggle("is-wide", options.wide === true);
     els.modal.hidden = false;
@@ -6508,7 +6584,7 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
             { t: "你会留下 " },
             { t: `${gain} 枚月光邮戳`, strong: true },
             {
-              t: "，可以去月光树点一盏灯。集邮册、邮路熟练度、墨点和在途的邮差都会留到下一程；夜班契约会清空，下程重新选。"
+              t: "，可以去月光树点一盏灯。集邮册、邮路熟练度、墨点和在途的邮差都会留到下一程；柜台报价、夜班契约和进行中的远行会结束，下程重新来。"
             }
           ]
         }
@@ -6531,6 +6607,8 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
     state.bellReadyAt = 0;
     state.contract = "";
     state.accepted = [];
+    state.offers = [];
+    state.expedition = null;
     ownedUpgradeSet = new Set();
     combo = 0;
     comboTimer = 0;
@@ -6550,12 +6628,11 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
     );
   }
 
-  function resetLocalForNewOwner() {
-    const keepSound = state.sound;
-    state = createInitialState(keepSound);
-    ownedUpgradeSet = new Set();
-    achievementSet = new Set();
-    goalsDoneSet = new Set();
+  function adoptFreshGameState(fresh) {
+    state = fresh;
+    ownedUpgradeSet = new Set(state.upgrades);
+    achievementSet = new Set(state.achievements);
+    goalsDoneSet = new Set(state.goalsDone);
     unseenAchievements = 0;
     combo = 0;
     comboTimer = 0;
@@ -6563,7 +6640,8 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
     ensureOffers();
     updateGoals();
     refreshLive();
-    saveGame();
+    updateTabBadges();
+    saveGame({ skipAdopt: true });
   }
 
   function resetGame() {
@@ -6587,7 +6665,7 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
     refreshLive();
     hideGoldenLetter();
     scheduleGolden(55, 110);
-    saveGame();
+    saveGame({ skipAdopt: true });
     lastUiAt = performance.now();
     showToast("邮局重新开张了。今天的风也是新的。", 4200);
   }
@@ -6621,7 +6699,11 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
 
   function applyRemoteSave(payload) {
     suppressSaves = true;
-    writeSave(payload);
+    if (!writeSave(normalizeState(payload))) {
+      suppressSaves = false;
+      showToast("本机存储空间不足，云端存档暂时写不进本机。请清理存储后重试。", 8000);
+      return;
+    }
     window.location.reload();
   }
 
@@ -6873,13 +6955,14 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
       const verifier = await deriveVerifier(username, password);
       if (mode === "register") {
         const resetForNewOwner = Boolean(readSaveOwner());
-        if (resetForNewOwner) resetLocalForNewOwner();
+        const registerState = resetForNewOwner ? createInitialState(state.sound) : state;
         const result = await cloudApi.register({
           base,
           username,
           verifier,
-          save: state
+          save: registerState
         });
+        if (resetForNewOwner) adoptFreshGameState(registerState);
         account = {
           base,
           token: result.token,
@@ -7283,6 +7366,7 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
         ripe,
         watered: Boolean(plot.watered),
         stolen: plot.stolen || 0,
+        stolenToday: Boolean(plot.stolen_today),
         name: plot.name || "空地",
         status,
         percent: empty ? 0 : Math.round(gardenPercent(plot)),
@@ -7383,7 +7467,7 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
   function townLoadingMarkup() {
     return `
       <div class="town-box">
-        <div class="town-loading">正在打开镇口…</div>
+        <div class="town-loading" role="status" aria-live="polite">正在打开镇口…</div>
       </div>`;
   }
 
@@ -7830,9 +7914,28 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
   function saveGame(options = {}) {
     if (!state) return;
     if (suppressSaves) return;
+    // Read-before-write: if another tab saved since we last looked, take that
+    // version instead of stamping our stale snapshot over it. Only autosave,
+    // tab switches and unload pass checkOtherTabs, so a deliberate click in
+    // this tab is never silently replaced mid-action. skipAdopt protects
+    // replacements (new owner, reset) from being undone.
+    if (options.checkOtherTabs && !options.skipAdopt && !lastWriteFailed) {
+      const storedText = readStoredSaveText();
+      if (storedText && storedText !== lastLocalText) {
+        adoptLocalSaveText(storedText, { announce: false });
+      }
+    }
     if (options.markSeen !== false) state.lastSeen = Date.now();
-    writeSave(state);
-    scheduleCloudPush();
+    const payload = normalizeState(state);
+    const text = JSON.stringify(payload);
+    const signature = saveSignature(payload);
+    const changed = signature !== lastSaveSignature;
+    const shouldWrite = changed || options.force;
+    const saved = shouldWrite ? writeSaveText(text) : true;
+    if (changed) {
+      scheduleCloudPush();
+    }
+    if (saved && shouldWrite) lastSaveSignature = signature;
     try {
       if (window.claude && window.claude.hot && typeof window.claude.hot.snapshot === "function") {
         window.claude.hot.snapshot({ game: state });
@@ -7840,7 +7943,17 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
     } catch (error) {
       /* The viewer hook is optional. */
     }
+    if (!shouldWrite) return;
 
+    if (!saved) {
+      if (!saveFailureNotified) {
+        saveFailureNotified = true;
+        showToast("本机存档没写进去：存储空间不足。进度还在页面上，清理后会继续自动保存。", 7000);
+      }
+      setText(els.saveNote, "没夹进邮册 · 存储空间不足");
+      return;
+    }
+    saveFailureNotified = false;
     if (els.saveNote) {
       const now = new Date();
       const time = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
@@ -8046,11 +8159,19 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
       if (!state) return;
       if (document.hidden) {
         hiddenAt = Date.now();
-        saveGame();
+        saveGame({ force: true, checkOtherTabs: true });
         return;
       }
 
-      const awayStart = hiddenAt || state.lastSeen;
+      // Another tab may have moved ahead while this one was throttled.
+      // Take its save before granting idle earnings so we do not double-count.
+      if (!lastWriteFailed) {
+        const storedText = readStoredSaveText();
+        if (storedText && storedText !== lastLocalText) {
+          adoptLocalSaveText(storedText, { announce: true });
+        }
+      }
+      const awayStart = Math.max(hiddenAt || 0, state.lastSeen || 0);
       const away = awayStart ? (Date.now() - awayStart) / 1000 : 0;
       hiddenAt = 0;
       combo = 0;
@@ -8065,12 +8186,28 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
       }
       completeTrips(false);
       updateTabBadges();
-      saveGame();
+      saveGame({ checkOtherTabs: true });
       refreshLive();
     });
 
+    window.addEventListener("storage", (event) => {
+      if (event.key !== SAVE_KEY || !event.newValue || !state) return;
+      adoptLocalSaveText(event.newValue, { announce: true });
+    });
+
+    window.addEventListener("beforeunload", (event) => {
+      if (
+        nightEngine &&
+        (nightEngine.phase === "running" || nightEngine.phase === "break") &&
+        !nightEngine.snapshot().paused
+      ) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    });
+
     window.addEventListener("pagehide", () => {
-      saveGame({ markSeen: !document.hidden });
+      saveGame({ markSeen: !document.hidden, force: true, checkOtherTabs: true });
     });
   }
 
@@ -8144,7 +8281,7 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
       lastWeatherAt = now;
     }
     if (now - lastSaveAt >= SAVE_INTERVAL) {
-      saveGame();
+      saveGame({ checkOtherTabs: true });
       lastSaveAt = now;
     }
   }
@@ -8215,7 +8352,10 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
     sceneEffects.init();
     sceneEffects.setWeather(state.weatherId);
     scheduleGolden(48, 95);
-    if (window.location.hash === "#qa") {
+    const qaHost = window.location.hostname;
+    const qaLocal =
+      qaHost === "127.0.0.1" || qaHost === "localhost" || qaHost === "::1";
+    if (qaLocal && window.location.hash === "#qa") {
       window.__moss = {
         state: () => state,
         triggerEvent: () => { nextEventAt = 0; maybeTriggerEvent(); },

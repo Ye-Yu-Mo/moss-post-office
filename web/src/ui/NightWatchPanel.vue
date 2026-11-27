@@ -2,28 +2,43 @@
   <div v-if="snapshot" class="nw-panel">
     <div class="nw-view-switch" role="tablist" aria-label="守夜视图">
       <button
+        id="nw-tab-watch"
         class="nw-view-tab"
         :class="{ 'is-active': view === 'watch' }"
         type="button"
         role="tab"
+        aria-controls="nw-panel-watch"
         :aria-selected="view === 'watch'"
+        :tabindex="view === 'watch' ? 0 : -1"
         @click="view = 'watch'"
+        @keydown="onTabKeydown($event, 'watch')"
       >守夜</button>
       <button
+        id="nw-tab-archive"
         class="nw-view-tab"
         :class="{ 'is-active': view === 'archive' }"
         type="button"
         role="tab"
+        aria-controls="nw-panel-archive"
         :aria-selected="view === 'archive'"
+        :tabindex="view === 'archive' ? 0 : -1"
         @click="view = 'archive'"
+        @keydown="onTabKeydown($event, 'archive')"
       >档案</button>
     </div>
 
-    <template v-if="view === 'watch'">
+    <div
+      v-if="view === 'watch'"
+      id="nw-panel-watch"
+      class="nw-panel-view"
+      role="tabpanel"
+      aria-labelledby="nw-tab-watch"
+      tabindex="0"
+    >
     <div class="nw-panel-head">
       <div>
         <p class="nw-panel-kicker">夜班 · 守夜防线</p>
-        <h4>第 {{ snapshot.night }} 夜在等你</h4>
+        <h2 class="nw-panel-title">第 {{ snapshot.night }} 夜在等你</h2>
         <p class="town-lead">雾里的影子会沿五条邮路摸到门板。种下邮局的植物，守住到天亮。</p>
       </div>
       <button class="primary-btn nw-start" type="button" @click="handlers.onOpen">开始守夜</button>
@@ -150,9 +165,16 @@
       灯油自己会慢慢攒，邮票花每 6.5 秒结一滴。门板 100 点，影子摸到就扣；守住全部波次才算天亮。
       失败不扣存档，只是这一夜没有奖励。
     </p>
-    </template>
+    </div>
 
-    <template v-else>
+    <div
+      v-else
+      id="nw-panel-archive"
+      class="nw-panel-view"
+      role="tabpanel"
+      aria-labelledby="nw-tab-archive"
+      tabindex="0"
+    >
       <div class="nw-archive">
         <div class="nw-stats">
           <span><small>最远</small><b>第 {{ snapshot.best }} 夜</b></span>
@@ -225,12 +247,12 @@
 
         <button class="primary-btn nw-archive-start" type="button" @click="view = 'watch'">去守一夜</button>
       </div>
-    </template>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { computed, ref } from "vue";
+import { computed, nextTick, ref } from "vue";
 import { nightPanelStore } from "./nightPanelStore.js";
 
 defineProps({
@@ -243,4 +265,22 @@ const view = ref("watch");
 const ownedMedals = computed(
   () => (snapshot.value?.medals || []).filter((medal) => medal.owned).length
 );
+
+// Roving tabindex: arrow keys move between 守夜 and 档案 like a real tablist.
+function onTabKeydown(event) {
+  const keys = ["ArrowLeft", "ArrowRight", "Home", "End"];
+  if (!keys.includes(event.key)) return;
+  event.preventDefault();
+  if (event.key === "Home") {
+    view.value = "watch";
+  } else if (event.key === "End") {
+    view.value = "archive";
+  } else {
+    view.value = view.value === "watch" ? "archive" : "watch";
+  }
+  nextTick(() => {
+    const id = view.value === "watch" ? "nw-tab-watch" : "nw-tab-archive";
+    document.getElementById(id)?.focus();
+  });
+}
 </script>

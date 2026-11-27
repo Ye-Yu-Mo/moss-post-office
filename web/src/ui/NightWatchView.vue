@@ -12,31 +12,43 @@
         class="nw-chip nw-modifier-chip"
         :class="'tone-' + snapshot.modifier.tone"
         :title="snapshot.modifier.desc"
-      ><small>今日</small><b>{{ snapshot.modifier.name }}</b></span>
+        :aria-label="`今日词条：${snapshot.modifier.name}。${snapshot.modifier.desc}`"
+      ><small aria-hidden="true">今日</small><b>{{ snapshot.modifier.name }}</b></span>
       <span
         v-if="snapshot.deepFog.active"
         class="nw-chip nw-deep-chip"
         :title="snapshot.deepFog.desc"
-      ><small>深雾</small><b>{{ snapshot.deepFog.shortName }} · {{ snapshot.deepFog.layer }} 层</b></span>
+        :aria-label="`深雾 ${snapshot.deepFog.layer} 层：${snapshot.deepFog.shortName}。${snapshot.deepFog.desc}`"
+      ><small aria-hidden="true">深雾</small><b>{{ snapshot.deepFog.shortName }} · {{ snapshot.deepFog.layer }} 层</b></span>
       <div class="nw-controls">
-        <button class="link-btn" type="button" @click="handlers.onPause">
+        <button
+          class="link-btn"
+          type="button"
+          :aria-pressed="snapshot.paused"
+          :aria-label="snapshot.paused ? '继续守夜' : '暂停守夜（选补给时也可以暂停）'"
+          @click="handlers.onPause"
+        >
           {{ snapshot.paused ? "继续" : "暂停" }}
         </button>
-        <button class="link-btn" type="button" @click="handlers.onSpeed">{{ snapshot.speed }}×</button>
+        <button class="link-btn" type="button" :aria-label="`切换速度，当前 ${snapshot.speed} 倍`" @click="handlers.onSpeed">{{ snapshot.speed }}×</button>
       </div>
     </div>
 
-    <div v-if="snapshot.boons.length" class="nw-boons">
+    <div v-if="snapshot.boons.length" class="nw-boons" role="group" aria-labelledby="nw-boons-title">
       <div class="nw-boons-head">
-        <b>波间补给</b>
-        <small>选一项，下一波开始前生效（{{ Math.ceil(snapshot.breakLeft) }} 秒后跳过）</small>
+        <b id="nw-boons-title">波间补给</b>
+        <small>选一项，下一波开始前生效（{{ Math.ceil(snapshot.breakLeft) }} 秒后自动跳过；按“暂停”可以停下来慢慢选）</small>
       </div>
+      <p class="sr-only" aria-live="polite">
+        波间补给出现：{{ snapshot.boons.map((boon) => boon.name).join("、") }}。倒计时 {{ Math.ceil(snapshot.breakLeft) }} 秒，按暂停可以停下。
+      </p>
       <div class="nw-boon-grid">
         <button
           v-for="boon in snapshot.boons"
           :key="boon.id"
           class="nw-boon"
           type="button"
+          :aria-label="`${boon.name}：${boon.desc}`"
           @click.stop="handlers.onBoon(boon.id)"
         >
           <span class="nw-boon-icon" aria-hidden="true" v-html="icons[boon.icon] || ''"></span>
@@ -132,22 +144,30 @@
       <div v-if="snapshot.phase === 'break'" class="nw-break">
         下一波还有 {{ Math.ceil(snapshot.breakLeft) }} 秒
       </div>
+    </div>
 
-      <div v-if="isOver" class="nw-overlay" :class="snapshot.result.won ? 'is-win' : 'is-lose'">
-        <p class="nw-overlay-kicker">{{ snapshot.result.won ? "天亮了" : "雾还没散" }}</p>
-        <h4>{{ snapshot.result.won ? `第 ${snapshot.result.level} 夜守住了` : `第 ${snapshot.result.level} 夜失守` }}</h4>
-        <p v-if="snapshot.result.won">
-          带回 {{ fmt(snapshot.result.rewards.stamps) }} 张邮票 · {{ snapshot.result.rewards.ink }} 墨点 ·
-          纸×{{ snapshot.result.rewards.paper }}<template v-if="snapshot.result.rewards.wax"> · 蜡×{{ snapshot.result.rewards.wax }}</template>
-        </p>
-        <p v-else>门板被撞开了。今晚没有奖励，材料会留在邮局，明天再来。</p>
-        <p class="nw-overlay-note">守住 {{ snapshot.result.wave }}/{{ snapshot.result.waves }} 波 · 打散 {{ snapshot.result.kills }} 个影子</p>
-        <p v-if="medalNote" class="nw-overlay-note">{{ medalNote }}</p>
-        <div class="nw-overlay-actions">
-          <button v-if="snapshot.result.won" class="primary-btn" type="button" @click="handlers.onNext">下一夜</button>
-          <button v-else class="primary-btn" type="button" @click="handlers.onRetry">再守一次</button>
-          <button class="secondary-btn" type="button" @click="handlers.onClose">收工</button>
-        </div>
+    <div
+      v-if="isOver"
+      ref="resultBox"
+      class="nw-overlay nw-overlay-done"
+      :class="snapshot.result.won ? 'is-win' : 'is-lose'"
+      role="dialog"
+      aria-labelledby="nw-result-title"
+      tabindex="-1"
+    >
+      <p class="nw-overlay-kicker">{{ snapshot.result.won ? "天亮了" : "雾还没散" }}</p>
+      <h2 id="nw-result-title">{{ snapshot.result.won ? `第 ${snapshot.result.level} 夜守住了` : `第 ${snapshot.result.level} 夜失守` }}</h2>
+      <p v-if="snapshot.result.won">
+        带回 {{ fmt(snapshot.result.rewards.stamps) }} 张邮票 · {{ snapshot.result.rewards.ink }} 墨点 ·
+        纸×{{ snapshot.result.rewards.paper }}<template v-if="snapshot.result.rewards.wax"> · 蜡×{{ snapshot.result.rewards.wax }}</template>
+      </p>
+      <p v-else>门板被撞开了。今晚没有奖励，材料会留在邮局，明天再来。</p>
+      <p class="nw-overlay-note">守住 {{ snapshot.result.wave }}/{{ snapshot.result.waves }} 波 · 打散 {{ snapshot.result.kills }} 个影子</p>
+      <p v-if="medalNote" class="nw-overlay-note">{{ medalNote }}</p>
+      <div class="nw-overlay-actions">
+        <button v-if="snapshot.result.won" class="primary-btn" type="button" @click="handlers.onNext">下一夜</button>
+        <button v-else class="primary-btn" type="button" @click="handlers.onRetry">再守一次</button>
+        <button class="secondary-btn" type="button" @click="handlers.onClose">收工</button>
       </div>
     </div>
 
@@ -156,6 +176,7 @@
         class="nw-tool"
         :class="{ 'is-active': shovel }"
         type="button"
+        :aria-pressed="shovel"
         @click="toggleShovel"
       >铲子 <small>返还一半</small></button>
       <span class="nw-tool-hint">{{ shovel ? "点一株植物铲掉，返还一半灯油。" : "选一张卡再点格子；融合体和普通植物都能铲。" }}</span>
@@ -174,6 +195,8 @@
         type="button"
         :disabled="!card.unlocked"
         :title="card.desc"
+        :aria-pressed="card.selected"
+        :aria-label="card.unlocked ? `${card.name}，${card.cost} 灯油。${card.desc}` : `${card.name}，第 ${card.unlockNight} 夜解锁。${card.desc}`"
         @click="selectCard(card.id)"
       >
         <span class="nw-card-icon" v-html="icons[card.icon] || ''"></span>
@@ -189,7 +212,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import { NW_LANES, NW_COLS } from "../nightwatch.js";
 import { nightWatchStore } from "./nightWatchStore.js";
 
@@ -206,6 +229,16 @@ const isOver = computed(
   () => Boolean(snapshot.value) && ["won", "lost"].includes(snapshot.value.phase)
 );
 const shovel = ref(false);
+const resultBox = ref(null);
+
+// The result card is a dialog outside the board: move focus so keyboard and
+// screen-reader players land on the outcome and its two actions.
+watch(isOver, (over) => {
+  if (!over) return;
+  nextTick(() => {
+    if (resultBox.value) resultBox.value.focus({ preventScroll: true });
+  });
+});
 
 function toggleShovel() {
   shovel.value = !shovel.value;

@@ -1047,7 +1047,7 @@ export function createNightWatch({
         finish(true);
       } else {
         phase = "break";
-        breakClock = 6;
+        breakClock = 12;
         boonChosen = false;
         boons = rollBoons(wave + 1);
         oil = Math.min(999, oil + mod.waveOil);

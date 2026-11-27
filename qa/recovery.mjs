@@ -18,6 +18,11 @@ async function main() {
   const user = `qr_${Date.now().toString().slice(-8)}`;
   await page.goto(`${BASE}/?qa=1#qa`, { waitUntil: "networkidle" });
   await page.waitForTimeout(700);
+  if (!(await page.evaluate(() => Boolean(window.__moss)))) {
+    console.error("QA hooks are disabled outside 127.0.0.1/localhost. Run recovery locally.");
+    await browser.close();
+    process.exit(2);
+  }
   await page.click("#accountBtn");
   await page.click("[data-account-mode='register']");
   await page.fill("#accountUser", user);

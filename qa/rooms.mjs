@@ -70,6 +70,12 @@ async function main() {
 
   await page.goto(`${BASE}/#qa`, { waitUntil: "networkidle" });
   await page.waitForTimeout(800);
+  const qaHooks = await page.evaluate(() => Boolean(window.__moss));
+  if (!qaHooks) {
+    console.error("QA hooks are disabled outside 127.0.0.1/localhost. Run this suite against the local stack.");
+    await browser.close();
+    process.exit(2);
+  }
 
   const room = (name) => page.locator(`section.room[data-room="${name}"]`);
   const navLabels = await page.locator(".room-label").allInnerTexts();
