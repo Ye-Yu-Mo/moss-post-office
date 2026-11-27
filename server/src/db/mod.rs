@@ -18,7 +18,7 @@ use crate::error::ApiError;
 pub use collectibles::Collectible;
 pub use events::NewEvent;
 pub use friends::{FriendProfile, FriendRequestOutcome, FriendRequestView, FriendSummary};
-pub use garden::{CropStat, GardenPlot, GardenReward, GardenVisitor};
+pub use garden::{CropStat, GardenPlot, GardenQuest, GardenReward, GardenVisitor, QuestReward};
 pub use saves::StoredSave;
 pub use sessions::SessionUser;
 pub use social::{BotSummary, NewPostcard, PostcardRow, SquareUser};

@@ -5446,3 +5446,42 @@ h3 {
   color: var(--muted);
   font-size: 8.5px;
 }
+
+.garden-quest {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 7px;
+  padding: 7px 8px;
+  border: 1px dashed color-mix(in srgb, var(--butter-deep) 42%, var(--line));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--butter) 9%, var(--paper));
+}
+
+.garden-quest.is-ready {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--moss) 45%, var(--line));
+  background: color-mix(in srgb, var(--moss-light) 18%, var(--paper));
+}
+
+.garden-quest.is-claimed {
+  opacity: 0.62;
+}
+
+.garden-quest .garden-icon {
+  width: 34px;
+  height: 34px;
+}
+
+.garden-quest .garden-icon .s-icon {
+  width: 26px;
+  height: 26px;
+}
+
+.garden-quest .garden-copy {
+  flex: 1 1 auto;
+}
+
+.garden-quest .link-btn {
+  flex: 0 0 auto;
+}

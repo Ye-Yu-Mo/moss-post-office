@@ -28,6 +28,7 @@ pub struct GardenResponse {
     pub harvests: i64,
     pub crop_stats: Vec<crate::db::CropStat>,
     pub visitors: Vec<crate::db::GardenVisitor>,
+    pub quest: Option<crate::db::GardenQuest>,
 }
 
 pub async fn own_garden(
@@ -44,6 +45,10 @@ pub async fn own_garden(
     let harvests = state.db.garden_harvests(context.user.id.clone()).await?;
     let crop_stats = state.db.crop_stats(context.user.id.clone()).await?;
     let visitors = state.db.garden_visitors(context.user.id.clone()).await?;
+    let quest = state
+        .db
+        .ensure_garden_quest(context.user.id.clone(), created_at)
+        .await?;
     Ok(Json(GardenResponse {
         owner: GardenOwner {
             id: context.user.id,
@@ -54,6 +59,7 @@ pub async fn own_garden(
         harvests,
         crop_stats,
         visitors,
+        quest,
     }))
 }
 
@@ -83,6 +89,7 @@ pub async fn friend_garden(
             harvests: 0,
             crop_stats: Vec::new(),
             visitors: Vec::new(),
+            quest: None,
         }));
     }
 
@@ -113,6 +120,7 @@ pub async fn friend_garden(
         harvests: 0,
         crop_stats: Vec::new(),
         visitors: Vec::new(),
+        quest: None,
     }))
 }
 
@@ -158,6 +166,18 @@ pub async fn water(
         Ok(Json(serde_json::json!({ "ok": true })))
     } else {
         Err(ApiError::BadRequest("cannot water now"))
+    }
+}
+
+pub async fn claim_daily_quest(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, ApiError> {
+    let context = require_user(&state, &headers).await?;
+    let reward = state.db.claim_garden_quest(context.user.id, now()).await?;
+    match reward {
+        Some(reward) => Ok(Json(serde_json::json!({ "ok": true, "reward": reward }))),
+        None => Err(ApiError::BadRequest("quest is not ready")),
     }
 }
 

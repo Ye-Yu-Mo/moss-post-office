@@ -1,6 +1,6 @@
 use rusqlite::Connection;
 
-pub(super) const SCHEMA_VERSION: i64 = 12;
+pub(super) const SCHEMA_VERSION: i64 = 13;
 
 const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -156,6 +156,16 @@ CREATE TABLE IF NOT EXISTS garden_actions (
 
 CREATE INDEX IF NOT EXISTS idx_garden_actions_owner
     ON garden_actions (owner_id, id);
+
+CREATE TABLE IF NOT EXISTS garden_quests (
+    user_id       TEXT NOT NULL,
+    day           INTEGER NOT NULL,
+    crop          TEXT NOT NULL,
+    reward_kind   TEXT NOT NULL,
+    reward_amount INTEGER NOT NULL,
+    claimed_at    INTEGER,
+    PRIMARY KEY (user_id, day)
+);
 
 CREATE TABLE IF NOT EXISTS bots (
     id            TEXT PRIMARY KEY,

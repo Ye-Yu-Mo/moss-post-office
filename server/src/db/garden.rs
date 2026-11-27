@@ -44,6 +44,23 @@ pub struct GardenVisitor {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct GardenQuest {
+    pub crop: String,
+    pub name: String,
+    pub amount: i64,
+    pub progress: i64,
+    pub reward_kind: String,
+    pub reward_amount: i64,
+    pub claimed: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct QuestReward {
+    pub kind: String,
+    pub amount: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct GardenReward {
     pub crop: String,
     pub name: String,
@@ -275,11 +292,146 @@ impl Db {
                  ON CONFLICT(user_id, crop) DO UPDATE SET harvests = harvests + 1",
                 params![owner_id, crop],
             )?;
+            tx.execute(
+                "INSERT INTO garden_actions (actor_id, owner_id, plot, action, crop, created_at)
+                 VALUES (?1, ?1, ?2, 'harvest', ?3, ?4)",
+                params![owner_id, plot, crop, now],
+            )?;
             tx.commit()?;
             Ok(Some(GardenReward {
                 name: name_of(&crop).to_string(),
                 crop,
                 amount,
+            }))
+        })
+        .await
+    }
+
+    pub async fn ensure_garden_quest(
+        &self,
+        user_id: String,
+        now: i64,
+    ) -> Result<Option<GardenQuest>, ApiError> {
+        let quest_user_id = user_id.clone();
+        self.call(move |conn| {
+            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            let day = now / 86_400;
+            let exists: Option<(String, String, i64, Option<i64>)> = tx
+                .query_row(
+                    "SELECT crop, reward_kind, reward_amount, claimed_at
+                     FROM garden_quests WHERE user_id = ?1 AND day = ?2",
+                    params![user_id, day],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                )
+                .optional()?;
+            if exists.is_none() {
+                let user_exists = tx
+                    .query_row("SELECT 1 FROM users WHERE id = ?1", [&user_id], |_| Ok(()))
+                    .optional()?
+                    .is_some();
+                if !user_exists {
+                    return Ok(());
+                }
+                let hash = user_id.bytes().fold(day as u64, |value, byte| {
+                    value.wrapping_mul(31).wrapping_add(byte as u64)
+                });
+                let crops = ["letter", "stamp", "inkberry"];
+                let crop = crops[(hash as usize) % crops.len()];
+                let (reward_kind, reward_amount) = match crop {
+                    "letter" => ("ink", 3),
+                    "stamp" => ("stamps", 800),
+                    _ => ("paper", 3),
+                };
+                tx.execute(
+                    "INSERT OR IGNORE INTO garden_quests
+                     (user_id, day, crop, reward_kind, reward_amount, claimed_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, NULL)",
+                    params![user_id, day, crop, reward_kind, reward_amount],
+                )?;
+            }
+            tx.commit()?;
+            Ok(())
+        })
+        .await?;
+        self.garden_quest(quest_user_id, now).await
+    }
+
+    pub async fn garden_quest(
+        &self,
+        user_id: String,
+        now: i64,
+    ) -> Result<Option<GardenQuest>, ApiError> {
+        self.call(move |conn| {
+            let day = now / 86_400;
+            let row: Option<(String, String, i64, Option<i64>)> = conn
+                .query_row(
+                    "SELECT crop, reward_kind, reward_amount, claimed_at
+                     FROM garden_quests WHERE user_id = ?1 AND day = ?2",
+                    params![user_id, day],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                )
+                .optional()?;
+            let Some((crop, reward_kind, reward_amount, claimed_at)) = row else {
+                return Ok(None);
+            };
+            let progress: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM garden_actions
+                 WHERE actor_id = ?1 AND action = 'harvest' AND crop = ?2 AND created_at >= ?3",
+                params![user_id, crop, day * 86_400],
+                |row| row.get(0),
+            )?;
+            Ok(Some(GardenQuest {
+                name: name_of(&crop).to_string(),
+                crop,
+                amount: 1,
+                progress,
+                reward_kind,
+                reward_amount,
+                claimed: claimed_at.is_some(),
+            }))
+        })
+        .await
+    }
+
+    pub async fn claim_garden_quest(
+        &self,
+        user_id: String,
+        now: i64,
+    ) -> Result<Option<QuestReward>, ApiError> {
+        self.call(move |conn| {
+            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            let day = now / 86_400;
+            let row: Option<(String, String, i64, Option<i64>)> = tx
+                .query_row(
+                    "SELECT crop, reward_kind, reward_amount, claimed_at
+                     FROM garden_quests WHERE user_id = ?1 AND day = ?2",
+                    params![user_id, day],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                )
+                .optional()?;
+            let Some((crop, reward_kind, reward_amount, claimed_at)) = row else {
+                return Ok(None);
+            };
+            if claimed_at.is_some() {
+                return Ok(None);
+            }
+            let progress: i64 = tx.query_row(
+                "SELECT COUNT(*) FROM garden_actions
+                 WHERE actor_id = ?1 AND action = 'harvest' AND crop = ?2 AND created_at >= ?3",
+                params![user_id, crop, day * 86_400],
+                |row| row.get(0),
+            )?;
+            if progress < 1 {
+                return Ok(None);
+            }
+            tx.execute(
+                "UPDATE garden_quests SET claimed_at = ?1 WHERE user_id = ?2 AND day = ?3",
+                params![now, user_id, day],
+            )?;
+            tx.commit()?;
+            Ok(Some(QuestReward {
+                kind: reward_kind,
+                amount: reward_amount,
             }))
         })
         .await
@@ -324,7 +476,7 @@ impl Db {
                 "SELECT COALESCE(u.username, '一位邮差'), a.action, a.crop, a.created_at
                  FROM garden_actions a
                  LEFT JOIN users u ON u.id = a.actor_id
-                 WHERE a.owner_id = ?1
+                 WHERE a.owner_id = ?1 AND a.action IN ('steal', 'help')
                  ORDER BY a.id DESC
                  LIMIT 8",
             )?;

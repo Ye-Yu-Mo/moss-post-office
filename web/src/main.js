@@ -5749,6 +5749,9 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     if (error && /request already pending/i.test(error.message || "")) {
       return "已经发过申请了，等对方接受。";
     }
+    if (error && /quest is not ready/i.test(error.message || "")) {
+      return "还没收到这份菜，先种再收。";
+    }
     if (error && /cannot plant here/i.test(error.message || "")) {
       return "这块地已经种上了，先收掉再说。";
     }
@@ -6266,6 +6269,24 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     });
   }
 
+  async function claimDailyGardenQuest() {
+    if (!account || !account.token) return;
+    try {
+      const result = await cloudApi.claimGardenQuest(account);
+      const reward = result.reward || {};
+      if (reward.kind === "stamps") addStamps(reward.amount);
+      else if (reward.kind === "paper") {
+        state.materials.paper = Math.min(99, (state.materials.paper || 0) + reward.amount);
+      } else if (reward.kind === "ink") addInk(reward.amount);
+      saveGame();
+      refreshLive();
+      showToast(`柜台收下了菜，给你 ${reward.kind === "stamps" ? `邮票×${formatNumber(reward.amount)}` : reward.kind === "paper" ? `纸×${reward.amount}` : `墨点×${reward.amount}`}。`, 3600);
+      await loadTown();
+    } catch (error) {
+      showToast(cloudErrorMessage(error), 3200);
+    }
+  }
+
   async function plantGardenPlot(plot, crop) {
     if (!account || !account.token) return;
     try {
@@ -6411,10 +6432,29 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     const incoming = friendData.incoming || [];
     const outgoing = friendData.outgoing || [];
     const garden = townData.garden || null;
+    const quest = garden && garden.quest;
+    const questRewardLabel = quest
+      ? quest.reward_kind === "stamps"
+        ? `邮票×${formatNumber(quest.reward_amount)}`
+        : quest.reward_kind === "paper"
+          ? `纸×${quest.reward_amount}`
+          : `墨点×${quest.reward_amount}`
+      : "";
+    const questMarkup = quest
+      ? `<div class="garden-quest${quest.claimed ? " is-claimed" : quest.progress >= quest.amount ? " is-ready" : ""}">
+          <span class="garden-icon" aria-hidden="true">${ICONS[GARDEN_ICONS[quest.crop] || "letter"]}</span>
+          <div class="garden-copy">
+            <b>今日柜台：收 1 份${quest.name}</b>
+            <small>${quest.progress} / ${quest.amount} · 奖励 ${questRewardLabel}</small>
+          </div>
+          <button class="link-btn" type="button" data-claim-quest ${quest.claimed || quest.progress < quest.amount ? "disabled" : ""}>${quest.claimed ? "今日已交" : quest.progress >= quest.amount ? "交菜" : "还差一份"}</button>
+        </div>`
+      : "";
     const gardenSection = garden
       ? `<section class="town-section garden-section">
           <div class="tree-head"><span>后院</span><span>${(garden.plots || []).filter((plot) => plot.ripe).length} 块可收</span></div>
           <p class="town-lead">种着信封草、邮票花和墨莓。熟了就收，朋友也可以来偷一把或帮你浇水。</p>
+          ${questMarkup}
           <p class="garden-next">${garden.harvests < 20
             ? `已收 ${garden.harvests || 0} 次 · 再收 ${20 - (garden.harvests || 0)} 次解锁第 4 块地`
             : garden.harvests < 45
@@ -6587,7 +6627,12 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       townUnread =
         townData.cards.filter((card) => card.gift_kind && !card.claimed).length +
         (townData.friends.incoming || []).length +
-        ((townData.garden && townData.garden.plots) || []).filter((plot) => plot.ripe).length;
+        ((townData.garden && townData.garden.plots) || []).filter((plot) => plot.ripe).length +
+        (townData.garden && townData.garden.quest &&
+        townData.garden.quest.progress >= townData.garden.quest.amount &&
+        !townData.garden.quest.claimed
+          ? 1
+          : 0);
       townLoading = false;
       renderTownModal();
     } catch (error) {
@@ -7153,6 +7198,10 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
       const plantSeed = event.target.closest("[data-plant-seed]");
       if (plantSeed) {
         plantGardenPlot(Number(plantSeed.dataset.plantSeed), plantSeed.dataset.crop);
+        return;
+      }
+      if (event.target.closest("[data-claim-quest]")) {
+        claimDailyGardenQuest();
         return;
       }
       const waterPlot = event.target.closest("[data-water-plot]");

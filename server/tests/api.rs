@@ -1029,3 +1029,59 @@ async fn friend_can_water_once_per_plot() {
         .iter()
         .any(|card| card["template"] == "water_note" && card["sender"] == "water_bob"));
 }
+
+#[tokio::test]
+async fn daily_garden_quest_harvest_and_claim() {
+    let (app, _dir) = test_app();
+    let grower = register_ok(&app, "quest_grower", None).await;
+    let token = grower["token"].as_str().unwrap();
+
+    let response = app
+        .clone()
+        .oneshot(auth_request("GET", "/v1/garden", token))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let garden = json_body(response).await;
+    let quest = &garden["quest"];
+    assert_eq!(quest["amount"], 1);
+    assert_eq!(quest["progress"], 0);
+    assert_eq!(quest["claimed"], false);
+    let crop = quest["crop"].as_str().unwrap();
+    let plot = match crop {
+        "letter" => 0,
+        "stamp" => 1,
+        _ => 2,
+    };
+
+    let response = app
+        .clone()
+        .oneshot(post_json(
+            token,
+            "/v1/garden/harvest",
+            json!({ "plot": plot }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let response = app
+        .clone()
+        .oneshot(post_json(token, "/v1/garden/quest/claim", json!({})))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(
+        json_body(response).await["reward"]["amount"]
+            .as_i64()
+            .unwrap()
+            >= 1
+    );
+
+    let response = app
+        .clone()
+        .oneshot(post_json(token, "/v1/garden/quest/claim", json!({})))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}

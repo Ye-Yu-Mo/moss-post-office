@@ -202,6 +202,14 @@ export async function harvestPlot(account, plot) {
   });
 }
 
+export async function claimGardenQuest(account) {
+  return request(account.base, "/v1/garden/quest/claim", {
+    method: "POST",
+    token: account.token,
+    body: {}
+  });
+}
+
 export async function helpPlot(account, ownerId, plot) {
   return request(account.base, `/v1/garden/${encodeURIComponent(ownerId)}/help`, {
     method: "POST",
