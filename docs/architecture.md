@@ -86,11 +86,11 @@
 
 ## 7. 前端迁移状态（Vue 3）
 
-- 2026-11-27：接入 Vue 3 + `@vitejs/plugin-vue`；`TownView.vue` 接管镇口（好友 / 收件箱 / 广场），`GardenPanel.vue` 嵌套其中，`AccountView.vue` 接管账号弹窗，`OrdersView.vue` 接管订单面板，`AlbumView.vue` 接管邮册面板，`MoonView.vue` 接管月亮面板，`WorkshopView.vue` 接管工坊面板，`ExpeditionView.vue` 接管远行界面（路线/手牌/营地/结算），状态机仍在纯 JS。
-- 挂载方式：`mountTown.js` / `mountAccount.js` 在弹窗 DOM 里创建/卸载 Vue app；props 是快照，事件通过回调回传旧逻辑；点击用 `.stop` 避免和旧事件委托重复触发。
+- 2026-11-27：接入 Vue 3 + `@vitejs/plugin-vue`；`TownView.vue` 接管镇口（好友 / 收件箱 / 广场），`GardenPanel.vue` 嵌套其中，`AccountView.vue` 接管账号弹窗，`OrdersView.vue` 接管订单面板，`AlbumView.vue` 接管邮册面板，`MoonView.vue` 接管月亮面板，`WorkshopView.vue` 接管工坊面板，`ExpeditionView.vue` 接管远行界面（路线/手牌/营地/结算），`SeedModal.vue` 接管选种，`FriendGardenView.vue` 接管好友/NPC 后院（偷菜/帮浇水），`ExpeditionPrepView.vue` 接管行前准备；状态机仍在纯 JS。
+- 挂载方式：`mountTown.js` / `mountAccount.js` / `mountSeedModal.js` 等在弹窗 DOM 里创建/卸载 Vue app；props 是快照，事件通过回调回传旧逻辑；点击用 `.stop` 避免和旧事件委托重复触发。
 - 游戏循环、存档、远征状态机仍然在 Vue 外；Vue 只读 UI 数据，不参与逐帧 tick。
-- 迁移顺序：镇口（已完成）→ 账号（已完成）→ 订单（已完成）→ 邮册（已完成）→ 月亮（已完成）→ 工坊（已完成）→ 远行（已完成）→ 盖戳台 / 小弹窗；盖戳台保留原生或最后做薄包装。
-- 当前 bundle 约 260 KB（gzip 92 KB），其中 Vue 运行时约 60 KB；迁移期间接受这个增量，完成后删除旧字符串模板会回落。
+- 迁移顺序：镇口（已完成）→ 账号（已完成）→ 订单（已完成）→ 邮册（已完成）→ 月亮（已完成）→ 工坊（已完成）→ 远行（已完成）→ 选种 / 好友后院 / 行前准备（已完成）→ 盖戳台与其余小弹窗；盖戳台保留原生或最后做薄包装。
+- 当前 bundle 约 262 KB（gzip 93 KB），其中 Vue 运行时约 60 KB；迁移期间接受这个增量，完成后删除旧字符串模板会回落。
 - 禁止：把逐帧循环、计时器或游戏状态写进 Vue 响应式；每个面板只接收不可变快照和回调。
 
 ## 7. 版本策略

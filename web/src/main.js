@@ -12,6 +12,15 @@ import { mountWorkshop, unmountWorkshop } from "./ui/mountWorkshop.js";
 import { setWorkshopSnapshot } from "./ui/workshopStore.js";
 import { mountExpedition, unmountExpedition } from "./ui/mountExpedition.js";
 import { setExpeditionSnapshot } from "./ui/expeditionStore.js";
+import { mountSeedModal, unmountSeedModal } from "./ui/mountSeedModal.js";
+import { setSeedSnapshot } from "./ui/seedStore.js";
+import { mountFriendGarden, unmountFriendGarden } from "./ui/mountFriendGarden.js";
+import { setFriendGardenSnapshot } from "./ui/friendGardenStore.js";
+import {
+  mountExpeditionPrep,
+  unmountExpeditionPrep
+} from "./ui/mountExpeditionPrep.js";
+import { setExpeditionPrepSnapshot } from "./ui/expeditionPrepStore.js";
 
 (() => {
   "use strict";
@@ -3954,30 +3963,28 @@ import { setExpeditionSnapshot } from "./ui/expeditionStore.js";
     if (focusTarget) focusTarget.focus({ preventScroll: true });
   }
 
-  function expeditionPrepMarkup() {
-    const selected = expeditionPrep;
-    return `
-      <div class="exp-prep">
-        <p class="exp-lead">行前准备</p>
-        <p class="account-hint">材料是远行成功后带回的。每次准备会消耗一份，整趟有效。</p>
-        <div class="exp-choices">
-          ${Object.entries(EXP_PREP).map(([id, item]) => {
-            const isSelected = selected.has(id);
-            const permanent = id === "wax" && hasMaterialUpgrade("seal_press");
-            const affordable = (state.materials[id] || 0) >= item.cost;
-            return `
-              <button class="exp-choice${isSelected ? " is-selected" : ""}" type="button" data-prep-toggle="${id}" ${permanent || (!isSelected && !affordable) ? "disabled" : ""}>
-                <b>${item.name} · ${EXP_MATERIALS[id].name} ${item.cost}</b>
-                <span>${permanent ? "封蜡台已永久生效" : item.desc + (!isSelected && !affordable ? " · 材料不够" : "")}</span>
-              </button>`;
-          }).join("")}
-        </div>
-        <p class="exp-hint">现有材料：${materialSummary()}</p>
-        <div class="exp-result-actions">
-          <button class="exp-primary" type="button" data-prep-start>${selected.size ? "带着这些出发" : "空手出发"}</button>
-          <button class="exp-secondary" type="button" data-prep-skip>不带材料，直接走</button>
-        </div>
-      </div>`;
+  function expeditionPrepSnapshot() {
+    return {
+      summary: materialSummary(),
+      count: expeditionPrep.size,
+      items: Object.entries(EXP_PREP).map(([id, item]) => {
+        const selected = expeditionPrep.has(id);
+        const permanent = id === "wax" && hasMaterialUpgrade("seal_press");
+        const affordable = (state.materials[id] || 0) >= item.cost;
+        return {
+          id,
+          name: item.name,
+          cost: item.cost,
+          materialName: EXP_MATERIALS[id].name,
+          selected,
+          permanent,
+          disabled: permanent || (!selected && !affordable),
+          note: permanent
+            ? "封蜡台已永久生效"
+            : item.desc + (!selected && !affordable ? " · 材料不够" : "")
+        };
+      })
+    };
   }
 
   function openExpeditionPrep() {
@@ -3990,11 +3997,19 @@ import { setExpeditionSnapshot } from "./ui/expeditionStore.js";
     expeditionPrep = new Set();
     openModal({
       title: "收拾邮袋",
-      body: expeditionPrepMarkup(),
+      body: `<div data-exp-prep-root></div>`,
       footer: false,
       wide: true,
       kicker: "苔藓邮局 · 远行准备"
     });
+    const root = els.modalBody.querySelector("[data-exp-prep-root]");
+    if (!root) return;
+    mountExpeditionPrep(root, {
+      onToggle: (id) => toggleExpeditionPrep(id),
+      onStart: () => startExpeditionWithPrep(false),
+      onSkip: () => startExpeditionWithPrep(true)
+    });
+    setExpeditionPrepSnapshot(expeditionPrepSnapshot());
   }
 
   function toggleExpeditionPrep(id) {
@@ -4011,9 +4026,7 @@ import { setExpeditionSnapshot } from "./ui/expeditionStore.js";
       playDenySound();
       return;
     }
-    if (els.modalBody.querySelector(".exp-prep")) {
-      els.modalBody.innerHTML = expeditionPrepMarkup();
-    }
+    setExpeditionPrepSnapshot(expeditionPrepSnapshot());
   }
 
   function startExpeditionWithPrep(skip = false) {
@@ -5329,6 +5342,9 @@ import { setExpeditionSnapshot } from "./ui/expeditionStore.js";
     unmountTown();
     unmountAccount();
     unmountExpedition();
+    unmountSeedModal();
+    unmountFriendGarden();
+    unmountExpeditionPrep();
     modalAction = typeof options.action === "function" ? options.action : null;
     modalReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     els.modalTitle.textContent = options.title;
@@ -5360,6 +5376,9 @@ import { setExpeditionSnapshot } from "./ui/expeditionStore.js";
     unmountTown();
     unmountAccount();
     unmountExpedition();
+    unmountSeedModal();
+    unmountFriendGarden();
+    unmountExpeditionPrep();
     els.modal.hidden = true;
     document.body.style.overflow = "";
     modalAction = null;
@@ -5937,52 +5956,6 @@ import { setExpeditionSnapshot } from "./ui/expeditionStore.js";
     return Math.min(100, Math.max(0, ((Date.now() / 1000 - plot.planted_at) / total) * 100));
   }
 
-  function gardenPlotMarkup(plot, options = {}) {
-    const own = options.mode === "own";
-    if (plot.empty) {
-      if (!own) {
-        return `
-          <article class="garden-plot is-empty">
-            <span class="garden-icon" aria-hidden="true">${ICONS.fern}</span>
-            <div class="garden-copy"><b>空地</b><small>主人还没种下新的种子</small></div>
-          </article>`;
-      }
-      return `
-        <article class="garden-plot is-empty">
-          <span class="garden-icon" aria-hidden="true">${ICONS.fern}</span>
-          <div class="garden-copy"><b>空地</b><small>种点什么？</small></div>
-          <button class="garden-seed-open" type="button" data-open-seeds="${plot.plot}">选种</button>
-        </article>`;
-    }
-    const ripe = Boolean(plot.ripe);
-    const iconName = GARDEN_ICONS[plot.crop] || "letter";
-    const status = `${plot.watered ? "已浇水 · " : ""}${ripe
-      ? "可以收了"
-      : `还差 ${formatDuration(Math.max(0, plot.ripe_at - Date.now() / 1000))}`}`;
-    let action;
-    if (own) {
-      action = ripe
-        ? `<button class="link-btn" type="button" data-harvest-plot="${plot.plot}">收菜</button>`
-        : `<button class="link-btn" type="button" data-water-plot="${plot.plot}" ${plot.watered ? "disabled" : ""}>${plot.watered ? "已浇水" : "浇水"}</button>`;
-    } else if (ripe) {
-      action = `<button class="link-btn" type="button" data-steal-plot="${plot.plot}" data-owner-id="${escapeHtml(options.ownerId || "")}">偷一把</button>`;
-    } else if (!plot.watered) {
-      action = `<button class="link-btn" type="button" data-help-plot="${plot.plot}" data-owner-id="${escapeHtml(options.ownerId || "")}">帮浇水</button>`;
-    } else {
-      action = `<button class="link-btn" type="button" disabled>已浇水</button>`;
-    }
-    return `
-      <article class="garden-plot${ripe ? " is-ripe" : ""}">
-        <span class="garden-icon" aria-hidden="true">${ICONS[iconName]}</span>
-        <div class="garden-copy">
-          <b>${plot.name}</b>
-          <small>${status}${plot.stolen ? ` · 被偷 ${plot.stolen} 份` : ""}</small>
-        </div>
-        <div class="garden-bar"><span style="width:${Math.round(gardenPercent(plot))}%"></span></div>
-        ${action}
-      </article>`;
-  }
-
   function gardenRewardText(reward) {
     if (!reward) return "";
     if (reward.crop === "stamp" || reward.crop === "starchild") {
@@ -6012,30 +5985,38 @@ import { setExpeditionSnapshot } from "./ui/expeditionStore.js";
     return `纸×${amount}`;
   }
 
-  function openSeedModal(plot) {
+  function seedSnapshot(plot) {
     const harvests = (townData && townData.garden && townData.garden.harvests) || 0;
+    return {
+      plot: Number(plot),
+      crops: Object.entries(GARDEN_CROP_NAMES).map(([crop, name]) => {
+        const unlockAt = GARDEN_CROP_UNLOCK[crop] || 0;
+        return {
+          id: crop,
+          name,
+          minutes: GARDEN_CROP_MINUTES[crop],
+          reward: gardenCropRewardText(crop, GARDEN_CROP_YIELD[crop]),
+          unlocked: unlockAt <= harvests,
+          unlockAt,
+          icon: ICONS[GARDEN_ICONS[crop] || "letter"]
+        };
+      })
+    };
+  }
+
+  function openSeedModal(plot) {
     openModal({
       title: "选种",
-      body: `
-        <div class="seed-box">
-          <p class="town-lead">种下的作物会占一块地。收完再选下一轮；稀有种子按累计收菜次数解锁。</p>
-          <div class="seed-grid">
-            ${Object.entries(GARDEN_CROP_NAMES).map(([crop, name]) => {
-              const unlock = GARDEN_CROP_UNLOCK[crop] || 0;
-              const locked = unlock > harvests;
-              return `
-                <button class="seed-card${locked ? " is-locked" : ""}" type="button" data-plant-seed="${plot}" data-crop="${crop}" ${locked ? "disabled" : ""}>
-                  <span class="seed-icon" aria-hidden="true">${ICONS[GARDEN_ICONS[crop] || "letter"]}</span>
-                  <b>${name}</b>
-                  <small>${GARDEN_CROP_MINUTES[crop]} 分钟 · ${gardenCropRewardText(crop, GARDEN_CROP_YIELD[crop])}</small>
-                  <span class="seed-lock">${locked ? `收 ${unlock} 次解锁` : "可以种"}</span>
-                </button>`;
-            }).join("")}
-          </div>
-        </div>`,
+      body: `<div data-seed-root></div>`,
       footer: false,
       kicker: "后院 · 选种"
     });
+    const root = els.modalBody.querySelector("[data-seed-root]");
+    if (!root) return;
+    mountSeedModal(root, {
+      onPick: (crop) => plantGardenPlot(Number(plot), crop)
+    });
+    setSeedSnapshot(seedSnapshot(plot));
   }
 
   async function claimDailyGardenQuest() {
@@ -6113,37 +6094,66 @@ import { setExpeditionSnapshot } from "./ui/expeditionStore.js";
     }
   }
 
+  function friendGardenSnapshot(garden, ownerId) {
+    const owner = garden.owner || {};
+    const plots = (garden.plots || []).map((plot) => {
+      const ripe = Boolean(plot.ripe);
+      const empty = Boolean(plot.empty);
+      const iconName = GARDEN_ICONS[plot.crop] || "letter";
+      const status = empty
+        ? ""
+        : `${plot.watered ? "已浇水 · " : ""}${
+            ripe
+              ? "可以收了"
+              : `还差 ${formatDuration(Math.max(0, plot.ripe_at - Date.now() / 1000))}`
+          }`;
+      return {
+        plot: plot.plot,
+        empty,
+        ripe,
+        watered: Boolean(plot.watered),
+        stolen: plot.stolen || 0,
+        name: plot.name || "空地",
+        status,
+        percent: empty ? 0 : Math.round(gardenPercent(plot)),
+        icon: ICONS[iconName]
+      };
+    });
+    return {
+      status: "ready",
+      ownerId,
+      owner: {
+        name: owner.name || "一位邮差",
+        kind: owner.kind || "user"
+      },
+      plots
+    };
+  }
+
   async function openGardenModal(ownerId) {
     if (!account || !account.token) return;
     openModal({
       title: "后院",
-      body: `<div class="town-box"><div class="town-loading">正在推开后门…</div></div>`,
+      body: `<div data-garden-root></div>`,
       footer: false,
       kicker: "镇口 · 后院"
     });
+    const root = els.modalBody.querySelector("[data-garden-root]");
+    if (!root) return;
+    mountFriendGarden(root, {
+      onSteal: (plot) => stealGardenPlot(ownerId, Number(plot)),
+      onHelp: (plot) => helpGardenPlot(ownerId, Number(plot)),
+      onBack: () => openTown()
+    });
+    setFriendGardenSnapshot({ status: "loading" });
     try {
       const garden = await cloudApi.friendGarden(account, ownerId);
-      const owner = garden.owner || {};
-      const plots = garden.plots || [];
-      els.modalBody.innerHTML = `
-        <div class="town-box">
-          <div class="town-head">
-            <div>
-              <p class="town-lead">${escapeHtml(owner.name || "一位邮差")} 的后院${owner.kind === "bot" ? " · NPC" : ""}</p>
-              <p class="town-lead">熟了的可以偷一把，每天每块地一次。主人收菜时会少一份。</p>
-            </div>
-            <button class="link-btn" type="button" data-garden-back>回镇口</button>
-          </div>
-          <div class="garden-grid">
-            ${plots.map((plot) => gardenPlotMarkup(plot, { ownerId, mode: "steal" })).join("")}
-          </div>
-        </div>`;
+      setFriendGardenSnapshot(friendGardenSnapshot(garden, ownerId));
     } catch (error) {
-      els.modalBody.innerHTML = `
-        <div class="town-box">
-          <p class="town-lead">${escapeHtml(cloudErrorMessage(error))}</p>
-          <button class="primary-btn" type="button" data-garden-back>回镇口</button>
-        </div>`;
+      setFriendGardenSnapshot({
+        status: "error",
+        error: cloudErrorMessage(error)
+      });
     }
   }
 
