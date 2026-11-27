@@ -109,6 +109,7 @@
         </p>
         <p v-else>门板被撞开了。今晚没有奖励，材料会留在邮局，明天再来。</p>
         <p class="nw-overlay-note">守住 {{ snapshot.result.wave }}/{{ snapshot.result.waves }} 波 · 打散 {{ snapshot.result.kills }} 个影子</p>
+        <p v-if="medalNote" class="nw-overlay-note">{{ medalNote }}</p>
         <div class="nw-overlay-actions">
           <button v-if="snapshot.result.won" class="primary-btn" type="button" @click="handlers.onNext">下一夜</button>
           <button v-else class="primary-btn" type="button" @click="handlers.onRetry">再守一次</button>
@@ -160,6 +161,13 @@ const laneList = Array.from({ length: NW_LANES }, (_, index) => index);
 const isOver = computed(
   () => Boolean(snapshot.value) && ["won", "lost"].includes(snapshot.value.phase)
 );
+const medalNote = computed(() => {
+  const source = snapshot.value;
+  if (!source || !source.result || !source.result.won) return "";
+  return [5, 10, 15].includes(source.result.level)
+    ? "这一夜有纪念戳，会由邮局签发并记进邮册。"
+    : "";
+});
 
 const cells = computed(() => {
   const source = snapshot.value;

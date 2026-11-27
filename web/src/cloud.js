@@ -294,3 +294,11 @@ export async function logout(account) {
     body: {}
   });
 }
+
+export async function claimNightWatch(account, level) {
+  return request(account.base, "/v1/nightwatch/claim", {
+    method: "POST",
+    token: account.token,
+    body: { level }
+  });
+}

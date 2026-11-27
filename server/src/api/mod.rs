@@ -3,6 +3,7 @@ pub mod events;
 pub mod friends;
 pub mod garden;
 pub mod health;
+pub mod nightwatch;
 pub mod save;
 pub mod social;
 
@@ -38,6 +39,7 @@ pub fn router() -> Router<Arc<AppState>> {
         )
         .route("/v1/postcards/{id}/claim", post(social::claim_postcard))
         .route("/v1/collectibles", get(social::collectibles))
+        .route("/v1/nightwatch/claim", post(nightwatch::claim))
         .route("/v1/friends", get(friends::list_friends))
         .route("/v1/friends/request", post(friends::send_friend_request))
         .route("/v1/friends/accept", post(friends::accept_friend_request))

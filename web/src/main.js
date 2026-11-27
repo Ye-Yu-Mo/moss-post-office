@@ -315,6 +315,12 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
     { id: "rain", name: "雨夜", bots: ["b_plane", "b_mushroom"], rewardMaterial: "cloth" }
   ];
 
+  const NIGHT_MEDALS = [
+    { level: 5, template: "night_5", name: "守夜铜戳", edition: 100, icon: "bell", desc: "守住第 5 夜的纪念。" },
+    { level: 10, template: "night_10", name: "守夜银戳", edition: 50, icon: "star", desc: "守住第 10 夜的纪念。" },
+    { level: 15, template: "night_15", name: "守夜金戳", edition: 25, icon: "sun", desc: "守住第 15 夜的纪念。" }
+  ];
+
   const WEATHER_DURATION = 150000;
   const WEATHERS = [
     {
@@ -1251,7 +1257,7 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
 
   function createInitialState(sound = true) {
     return {
-      version: 12,
+      version: 13,
       stamps: 0,
       runEarned: 0,
       totalEarned: 0,
@@ -1280,7 +1286,7 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
       postcardSetRewards: [],
       postcardAlbumReward: false,
       collectibles: [],
-      nightWatch: { night: 1, best: 0, wins: 0, kills: 0, points: 0, talents: {} },
+      nightWatch: { night: 1, best: 0, wins: 0, kills: 0, points: 0, talents: {}, pendingMedals: [] },
       gens: Object.fromEntries(GENERATORS.map((gen) => [gen.id, 0])),
       boughtTotal: Object.fromEntries(GENERATORS.map((gen) => [gen.id, 0])),
       upgrades: [],
@@ -1397,6 +1403,15 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
       clean.nightWatch.kills = Math.max(0, Math.floor(numberOr(raw.nightWatch.kills)));
       clean.nightWatch.points = Math.max(0, Math.floor(numberOr(raw.nightWatch.points)));
       clean.nightWatch.best = Math.min(clean.nightWatch.best, clean.nightWatch.night - 1);
+      if (Array.isArray(raw.nightWatch.pendingMedals)) {
+        clean.nightWatch.pendingMedals = [
+          ...new Set(
+            raw.nightWatch.pendingMedals
+              .map((level) => Math.floor(numberOr(level)))
+              .filter((level) => NIGHT_MEDALS.some((medal) => medal.level === level))
+          )
+        ];
+      }
       const talents = raw.nightWatch.talents;
       if (talents && typeof talents === "object") {
         NW_TALENTS.forEach((talent) => {
@@ -2486,7 +2501,20 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
       postcardCount: state.postcardAlbum.length,
       postcardTotal: TOWN_BOTS.length,
       postcardComplete: state.postcardAlbumReward,
-      postcardSets
+      postcardSets,
+      nightMedals: NIGHT_MEDALS.map((medal) => {
+        const owned = collectibleFor("nightwatch", medal.template);
+        return {
+          level: medal.level,
+          name: medal.name,
+          desc: medal.desc,
+          icon: ICONS[medal.icon],
+          edition: medal.edition,
+          reached: (state.nightWatch.best || 0) >= medal.level,
+          owned: Boolean(owned),
+          serialText: owned ? `#${owned.serial} / ${owned.edition}` : ""
+        };
+      })
     };
   }
 
@@ -4733,6 +4761,16 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
     progress.kills += result.kills;
     const talentPoints = 1 + (result.level % 5 === 0 ? 1 : 0);
     progress.points += talentPoints;
+    if (NIGHT_MEDALS.some((medal) => medal.level === result.level)) {
+      if (!progress.pendingMedals.includes(result.level)) {
+        progress.pendingMedals.push(result.level);
+      }
+      if (account && account.token) {
+        flushNightMedals();
+      } else {
+        showToast(`第 ${result.level} 夜的纪念戳会等你登录后寄进邮册。`, 4600);
+      }
+    }
     saveGame();
     refreshLive();
     updateTabBadges();
@@ -6163,6 +6201,7 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
         account.dirty = true;
         cloudApi.saveAccount(account);
         scheduleCloudPush(500);
+        flushNightMedals();
         return;
       }
       if (remote.revision > account.revision) {
@@ -6188,6 +6227,7 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
         return;
       }
       if (account.dirty) scheduleCloudPush(500);
+      flushNightMedals();
     } catch (error) {
       if (error.status === 401) {
         account.token = "";
@@ -6233,6 +6273,7 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
         cloudApi.saveAccount(account);
         refreshAccountButton();
         renderAccountModal();
+        flushNightMedals();
         showToast("账号建好了，本地存档已经一起寄上去。", 4600);
         return { ok: true };
       }
@@ -6271,6 +6312,7 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
       cloudApi.saveAccount(account);
       refreshAccountButton();
       renderAccountModal();
+      flushNightMedals();
       showToast("服务器上还没有存档，已把本地存档传上去。", 4600);
       return { ok: true };
     } catch (error) {
@@ -6373,6 +6415,31 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
     });
     if (added) state.collectibles = [...map.values()].slice(-80);
     return added;
+  }
+
+  async function flushNightMedals() {
+    if (!state || !account || !account.token) return;
+    if (!state.nightWatch.pendingMedals.length) return;
+    for (const level of [...state.nightWatch.pendingMedals]) {
+      try {
+        const result = await cloudApi.claimNightWatch(account, level);
+        const collectible = result && result.collectible;
+        if (collectible) {
+          mergeCollectibles([collectible]);
+          showToast(
+            `第 ${level} 夜的纪念戳寄到了：#${collectible.serial} / ${collectible.edition}。`,
+            5000
+          );
+        }
+        state.nightWatch.pendingMedals = state.nightWatch.pendingMedals.filter(
+          (item) => item !== level
+        );
+        saveGame();
+      } catch (error) {
+        break;
+      }
+    }
+    refreshLive();
   }
 
   function collectibleFor(kind, template) {

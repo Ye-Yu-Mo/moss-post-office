@@ -194,6 +194,7 @@ curl -sS -X POST http://127.0.0.1:17322/v1/events \
 
 - `collectibles` 表记录 kind/template/edition/serial/image_key；每用户每模板只能有一枚。
 - 明信片单版 200 枚，套装徽章 50 枚；serial 由服务端单调分配，超发拒绝。
+- 守夜纪念戳：`POST /v1/nightwatch/claim { level }`，只接受 5 / 10 / 15；对应 `nightwatch` 模板 `night_5` / `night_10` / `night_15`，edition 100 / 50 / 25，每用户每模板只能领一次，重复请求返回 `collectible: null`。
 - 目前美术使用现有 AI 图标作为占位；完整 AI 插画待图片接口配额恢复后替换。
 
 ## 数据与备份

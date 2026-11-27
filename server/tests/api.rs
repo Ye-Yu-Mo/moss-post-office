@@ -1085,3 +1085,74 @@ async fn daily_garden_quest_harvest_and_claim() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
+
+#[tokio::test]
+async fn nightwatch_medals_are_serialized_and_idempotent() {
+    let (app, _dir) = test_app();
+    let alice = register_ok(&app, "alice_night", None).await;
+    let alice_token = alice["token"].as_str().unwrap();
+
+    let response = app
+        .clone()
+        .oneshot(post_json(
+            alice_token,
+            "/v1/nightwatch/claim",
+            json!({ "level": 5 }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let claimed = json_body(response).await;
+    assert_eq!(claimed["collectible"]["kind"], "nightwatch");
+    assert_eq!(claimed["collectible"]["template"], "night_5");
+    assert_eq!(claimed["collectible"]["edition"], 100);
+    assert_eq!(claimed["collectible"]["serial"], 1);
+
+    let response = app
+        .clone()
+        .oneshot(post_json(
+            alice_token,
+            "/v1/nightwatch/claim",
+            json!({ "level": 5 }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(json_body(response).await["collectible"].is_null());
+
+    let bob = register_ok(&app, "bob_night", None).await;
+    let bob_token = bob["token"].as_str().unwrap();
+    let response = app
+        .clone()
+        .oneshot(post_json(
+            bob_token,
+            "/v1/nightwatch/claim",
+            json!({ "level": 5 }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(json_body(response).await["collectible"]["serial"], 2);
+
+    let response = app
+        .clone()
+        .oneshot(post_json(
+            alice_token,
+            "/v1/nightwatch/claim",
+            json!({ "level": 7 }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::post("/v1/nightwatch/claim")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(json!({ "level": 5 }).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}

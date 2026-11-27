@@ -61,6 +61,37 @@
         </div>
       </div>
     </section>
+
+    <section class="postcard-album">
+      <div class="tree-head">
+        <span>守夜纪念戳</span>
+        <span>{{ ownedMedals }} / {{ snapshot.nightMedals.length }}</span>
+      </div>
+      <p class="tree-note">
+        守住第 5 / 10 / 15 夜，邮局会签发一枚有编号的纪念戳。登录后记进邮册，转生不会清空。
+      </p>
+      <div class="night-medal-grid">
+        <article
+          v-for="medal in snapshot.nightMedals"
+          :key="medal.level"
+          class="night-medal"
+          :class="{ 'is-owned': medal.owned, 'is-locked': !medal.owned && !medal.reached }"
+        >
+          <span class="night-medal-icon" aria-hidden="true" v-html="medal.icon"></span>
+          <div class="night-medal-copy">
+            <b>{{ medal.name }}</b>
+            <small>
+              {{ medal.owned
+                ? medal.serialText
+                : medal.reached
+                  ? `已守住 · 待登录签发 · 限 ${medal.edition} 枚`
+                  : `守住第 ${medal.level} 夜 · 限 ${medal.edition} 枚` }}
+            </small>
+            <p>{{ medal.desc }}</p>
+          </div>
+        </article>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -69,4 +100,7 @@ import { computed } from "vue";
 import { albumStore } from "./albumStore.js";
 
 const snapshot = computed(() => albumStore.snapshot);
+const ownedMedals = computed(
+  () => (snapshot.value?.nightMedals || []).filter((medal) => medal.owned).length
+);
 </script>
