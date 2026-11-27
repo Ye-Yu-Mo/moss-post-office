@@ -1,4 +1,5 @@
 use rusqlite::params;
+use rusqlite::TransactionBehavior;
 
 use crate::{db::Db, error::ApiError};
 
@@ -16,7 +17,7 @@ impl Db {
         created_at: i64,
     ) -> Result<(), ApiError> {
         self.call(move |conn| {
-            let tx = conn.transaction()?;
+            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
             {
                 let mut statement = tx.prepare(
                     "INSERT INTO events (user_id, name, payload, client_ts, created_at)

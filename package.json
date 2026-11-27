@@ -12,7 +12,8 @@
     "preview": "vite preview",
     "standalone": "python3 build_standalone.py",
     "qa": "node qa/rooms.mjs",
-    "qa:recovery": "node qa/recovery.mjs"
+    "qa:recovery": "node qa/recovery.mjs",
+    "qa:stress": "node qa/stress.mjs"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.11",

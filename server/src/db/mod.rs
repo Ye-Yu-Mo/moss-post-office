@@ -68,7 +68,11 @@ impl Db {
 
 fn open_connection(path: &Path) -> rusqlite::Result<Connection> {
     let conn = Connection::open(path)?;
-    conn.busy_timeout(Duration::from_secs(5))?;
-    conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+    conn.busy_timeout(Duration::from_secs(10))?;
+    conn.execute_batch(
+        "PRAGMA journal_mode = WAL;
+         PRAGMA synchronous = NORMAL;
+         PRAGMA foreign_keys = ON;",
+    )?;
     Ok(conn)
 }

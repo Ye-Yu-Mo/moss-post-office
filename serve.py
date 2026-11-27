@@ -14,8 +14,8 @@ from urllib.parse import urlsplit
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DIST = os.path.join(ROOT, "dist")
 INDEX_PATH = os.path.join(DIST, "index.html")
-API_HOST = "127.0.0.1"
-API_PORT = 17322
+API_HOST = os.environ.get("MOSS_API_HOST", "127.0.0.1")
+API_PORT = int(os.environ.get("MOSS_API_PORT", "17322"))
 API_PREFIX = "/api/"
 MAX_PROXY_BODY = 1024 * 1024
 
@@ -85,6 +85,7 @@ def load_dist():
 class GameServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
+    request_queue_size = 128
 
     def __init__(self, address, handler):
         super().__init__(address, handler)

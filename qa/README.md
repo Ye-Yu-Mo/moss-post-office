@@ -41,3 +41,20 @@ MOSS_QA_BASE=http://47.92.150.181:17321 npm run qa
 - 房间淡入过渡存在
 - 390px：底部导航固定、无横向溢出
 - 全程收集 console / pageerror
+
+## 压测（隔离 release 栈）
+
+```bash
+# 1) release 后端 + 独立数据库
+MOSS_BIND=127.0.0.1:17342 MOSS_DB=/tmp/moss-stress.db ./server/target/release/moss-sync
+
+# 2) 静态服务，代理到压测后端
+MOSS_API_PORT=17342 python3 serve.py 17341
+
+# 3) 运行
+MOSS_STRESS_ROOT=http://127.0.0.1:17341 npm run qa:stress
+```
+
+覆盖：静态资源/ETag、200 注册、100 登录、800 广场、400 存档写、300 明信片并发（每日 5 张）、
+60 次纪念戳重复领取、花园收菜/种菜并发、health；输出 p50/p95/p99、状态分布和唯一序号。
+压测后建议 `sqlite3 /tmp/moss-stress.db "PRAGMA integrity_check;"` 并检查 collectibles 重复。

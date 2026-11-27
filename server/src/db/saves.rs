@@ -1,4 +1,4 @@
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{TransactionBehavior, params, OptionalExtension};
 
 use crate::{db::Db, error::ApiError};
 
@@ -52,7 +52,7 @@ impl Db {
         updated_at: i64,
     ) -> Result<Result<u64, u64>, ApiError> {
         self.call(move |conn| -> rusqlite::Result<Result<u64, u64>> {
-            let tx = conn.transaction()?;
+            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
             let current: Option<i64> = tx
                 .query_row(
                     "SELECT revision FROM saves WHERE user_id = ?1",

@@ -1,4 +1,4 @@
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{TransactionBehavior, params, OptionalExtension};
 
 use crate::{db::Db, error::ApiError};
 
@@ -27,7 +27,7 @@ impl Db {
     pub async fn register_account(&self, account: NewAccount) -> Result<bool, ApiError> {
         let outcome = self
             .call(move |conn| -> rusqlite::Result<Result<bool, ()>> {
-                let tx = conn.transaction()?;
+                let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
                 let inserted = tx.execute(
                     "INSERT INTO users (id, username, username_key, verifier, friend_code, created_at, last_login)
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
