@@ -6430,6 +6430,8 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
             `第 ${level} 夜的纪念戳寄到了：#${collectible.serial} / ${collectible.edition}。`,
             5000
           );
+        } else {
+          showToast(`第 ${level} 夜的纪念戳已经领过，或者这一版发完了。`, 3600);
         }
         state.nightWatch.pendingMedals = state.nightWatch.pendingMedals.filter(
           (item) => item !== level
