@@ -1,6 +1,6 @@
 import * as cloudApi from "./cloud.js";
 import { deriveVerifier, proveVerifier } from "./crypto.js";
-import { mountGarden, unmountGarden } from "./ui/mountGarden.js";
+import { mountTown, unmountTown } from "./ui/mountTown.js";
 
 (() => {
   "use strict";
@@ -5523,7 +5523,7 @@ import { mountGarden, unmountGarden } from "./ui/mountGarden.js";
   }
 
   function openModal(options) {
-    unmountGarden();
+    unmountTown();
     modalAction = typeof options.action === "function" ? options.action : null;
     modalReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     els.modalTitle.textContent = options.title;
@@ -5552,7 +5552,7 @@ import { mountGarden, unmountGarden } from "./ui/mountGarden.js";
 
   function closeModal() {
     if (els.modal.hidden) return;
-    unmountGarden();
+    unmountTown();
     els.modal.hidden = true;
     document.body.style.overflow = "";
     modalAction = null;
@@ -6126,6 +6126,17 @@ import { mountGarden, unmountGarden } from "./ui/mountGarden.js";
     return `${Math.floor(diff / 86_400)} 天前`;
   }
 
+  function updateTownButton() {
+    if (els.townDot) els.townDot.hidden = townUnread <= 0;
+    if (els.townBtn) {
+      els.townBtn.classList.toggle("has-mail", townUnread > 0);
+      els.townBtn.setAttribute(
+        "aria-label",
+        townUnread > 0 ? `镇口，有 ${townUnread} 条新消息` : "镇口"
+      );
+    }
+  }
+
   function townAvatar(name) {
     const icons = ["snail", "mushroom", "plane", "star", "mailbox", "letter", "tote", "boat", "fern", "wind"];
     let hash = 0;
@@ -6381,34 +6392,37 @@ import { mountGarden, unmountGarden } from "./ui/mountGarden.js";
     }
   }
 
-  function mountTownGarden() {
-    const root = document.querySelector("[data-garden-root]");
-    if (!root || !townData || !townData.garden) return;
-    const iconMap = Object.fromEntries(
-      Object.entries(GARDEN_ICONS).map(([crop, icon]) => [crop, ICONS[icon]])
-    );
-    mountGarden(root, {
-      garden: townData.garden,
-      icons: iconMap,
-      formatNumber,
-      timeText: townTime,
-      avatarFor: townAvatar,
+  function mountTownView() {
+    const root = document.querySelector("[data-town-root]");
+    if (!root || !townData) return;
+    mountTown(root, {
+      data: townData,
+      account,
+      helpers: {
+        icons: Object.fromEntries(
+          Object.entries(GARDEN_ICONS).map(([crop, icon]) => [crop, ICONS[icon]])
+        ),
+        materials: EXP_MATERIALS,
+        formatNumber,
+        timeText: townTime,
+        avatarFor: townAvatar
+      },
+      onRefresh: loadTown,
+      onCopyCode: copyFriendCode,
+      onFriendAdd: addFriendByCode,
+      onAcceptFriend: acceptFriendRequest,
+      onDeclineFriend: declineFriendRequest,
+      onRemoveFriend: removeFriendById,
+      onFriendProfile: openFriendProfile,
+      onVisitFriend: visitFriendById,
+      onGardenOpen: openGardenModal,
+      onSendPostcard: openPostcardComposer,
+      onClaimPostcard: claimTownPostcard,
       onHarvest: harvestGardenPlot,
       onWater: waterGardenPlot,
       onOpenSeeds: openSeedModal,
       onClaimQuest: claimDailyGardenQuest
     });
-  }
-
-  function updateTownButton() {
-    if (els.townDot) els.townDot.hidden = townUnread <= 0;
-    if (els.townBtn) {
-      els.townBtn.classList.toggle("has-mail", townUnread > 0);
-      els.townBtn.setAttribute(
-        "aria-label",
-        townUnread > 0 ? `镇口，有 ${townUnread} 条新消息` : "镇口"
-      );
-    }
   }
 
   function townLoggedOutMarkup() {
@@ -6440,137 +6454,15 @@ import { mountGarden, unmountGarden } from "./ui/mountGarden.js";
         </div>`;
     }
     if (!townData) return townLoadingMarkup();
-
-    const cards = townData.cards || [];
-    const players = townData.players || [];
-    const friendData = townData.friends || {
-      code: "",
-      friends: [],
-      incoming: [],
-      outgoing: []
-    };
-    const friendCode = friendData.code || "------";
-    const friendList = friendData.friends || [];
-    const incoming = friendData.incoming || [];
-    const outgoing = friendData.outgoing || [];
-    const garden = townData.garden || null;
-    const gardenSection = garden ? `<div data-garden-root></div>` : "";
-    const friendSection = `
-      <section class="town-section town-friends">
-        <div class="tree-head"><span>好友</span><span>${friendList.length} 位</span></div>
-        <div class="friend-code-row">
-          <span>我的好友码</span>
-          <b>${escapeHtml(friendCode)}</b>
-          <button class="link-btn" type="button" data-copy-friend-code>复制</button>
-        </div>
-        <div class="friend-add-row">
-          <input id="friendCodeInput" maxlength="6" autocomplete="off" placeholder="输入 6 位好友码">
-          <button class="primary-btn friend-add-btn" type="button" data-friend-add>加好友</button>
-        </div>
-        <p class="account-status" id="friendStatus"></p>
-        ${incoming.length
-          ? `<div class="friend-requests">${incoming.map((request) => `
-              <div class="friend-request">
-                <div><b>${escapeHtml(request.from_name)}</b><small>想加你为好友 · ${townTime(request.created_at)}</small></div>
-                <div class="friend-request-actions">
-                  <button class="link-btn" type="button" data-accept-friend="${request.id}">接受</button>
-                  <button class="link-btn" type="button" data-decline-friend="${request.id}">忽略</button>
-                </div>
-              </div>`).join("")}</div>`
-          : ""}
-        ${outgoing.length
-          ? `<p class="friend-note">已申请：${outgoing.map((request) => escapeHtml(request.to_name)).join("、")}，等对方接受。</p>`
-          : ""}
-        ${friendList.length
-          ? `<div class="friend-list">${friendList.map((friend) => `
-              <div class="friend-row">
-                ${townAvatar(friend.username)}
-                <div class="friend-copy">
-                  <b>${escapeHtml(friend.username)}</b>
-                  <small>${formatNumber(friend.total_stamps)} 邮票 · ${formatNumber(friend.expedition_wins)} 趟远行 · ${townTime(friend.last_active)}</small>
-                </div>
-                <div class="friend-actions">
-                  <button class="link-btn" type="button" data-send-postcard="${escapeHtml(friend.id)}" data-send-kind="user" data-send-name="${escapeHtml(friend.username)}">寄明信片</button>
-                  <button class="link-btn" type="button" data-friend-profile="${escapeHtml(friend.id)}">串门</button>
-                  <button class="link-btn" type="button" data-garden-open="${escapeHtml(friend.id)}">后院</button>
-                  <button class="link-btn" type="button" data-visit-friend="${escapeHtml(friend.id)}">留邮戳</button>
-                  <button class="link-btn" type="button" data-remove-friend="${escapeHtml(friend.id)}">删除</button>
-                </div>
-              </div>`).join("")}</div>`
-          : `<div class="town-empty">还没有好友。把好友码发给朋友，或者在镇口找一位邮差。</div>`}
-      </section>`;
-    const mailbox = cards.length
-      ? cards.map((card) => {
-          const unclaimed = card.gift_kind && !card.claimed;
-          return `
-            <article class="town-mail-card${card.sender_kind === "bot" ? " is-bot" : ""}">
-              <div class="town-mail-top">
-                <b>${escapeHtml(card.sender)}</b>
-                <span>${card.sender_kind === "bot" ? "镇上的邮差" : "路过的邮差"}</span>
-              </div>
-              <p>${escapeHtml(card.text)}</p>
-              <div class="town-mail-foot">
-                <small>${townTime(card.created_at)}</small>
-                ${card.gift_kind
-                  ? unclaimed
-                    ? `<button class="link-btn" type="button" data-claim-postcard="${card.id}">收下 ${giftLabel(card.gift_kind, card.gift_amount)}</button>`
-                    : `<span class="town-claimed">已收下 ${giftLabel(card.gift_kind, card.gift_amount)}</span>`
-                  : ""}
-              </div>
-            </article>`;
-        }).join("")
-      : `<div class="town-empty">还没有明信片。去镇口找一位邮差聊聊吧。</div>`;
-
-    const square = players.map((player) => {
-      const self = account && player.id === account.userId;
-      return `
-        <article class="town-player${player.kind === "bot" ? " is-bot" : ""}">
-          <div class="town-player-copy">
-            <div class="town-player-name">
-              ${townAvatar(player.name)}
-              <b>${escapeHtml(player.name)}</b>
-              ${player.kind === "bot" ? `<span class="town-npc">NPC</span>` : ""}
-              ${self ? `<span class="town-self">我</span>` : ""}
-            </div>
-            <small>${escapeHtml(player.bio || (player.kind === "bot" ? "镇上的老邮差。" : "路过的邮差。"))}</small>
-          </div>
-          <div class="town-player-stats">
-            <span>${formatNumber(player.total_stamps)} 邮票</span>
-            <span>${formatNumber(player.expedition_wins)} 趟远行</span>
-          </div>
-          <div class="town-player-actions">
-            <small>${townTime(player.last_active)}</small>
-            ${self ? "" : `<button class="link-btn" type="button" data-send-postcard="${escapeHtml(player.id)}" data-send-kind="${player.kind}" data-send-name="${escapeHtml(player.name)}">寄明信片</button>
-            ${player.kind === "bot" ? `<button class="link-btn" type="button" data-garden-open="${escapeHtml(player.id)}">后院</button>` : ""}`}
-          </div>
-        </article>`;
-    }).join("");
-
-    return `
-      <div class="town-box">
-        <div class="town-head">
-          <p class="town-lead">镇口的邮差会互寄明信片。真人玩家和 NPC 都会回信，每天最多寄 5 张。</p>
-          <button class="link-btn" type="button" data-town-refresh>刷新</button>
-        </div>
-        ${friendSection}
-        ${gardenSection}
-        <section class="town-section">
-          <div class="tree-head"><span>收到的明信片</span><span>${cards.length} 封</span></div>
-          <div class="town-mail-list">${mailbox}</div>
-        </section>
-        <section class="town-section">
-          <div class="tree-head"><span>镇上的邮差</span><span>按邮票排序</span></div>
-          <div class="town-player-list">${square}</div>
-        </section>
-      </div>`;
+    return `<div data-town-root></div>`;
   }
 
   function renderTownModal() {
     if (!els.modal || els.modal.hidden) return;
-    if (!els.modalBody.querySelector(".town-box")) return;
-    unmountGarden();
+    if (els.modalTitle.textContent !== "镇口") return;
+    unmountTown();
     els.modalBody.innerHTML = townMarkup();
-    mountTownGarden();
+    if (townData) mountTownView();
     updateTownButton();
   }
 
@@ -6671,18 +6563,14 @@ import { mountGarden, unmountGarden } from "./ui/mountGarden.js";
     }
   }
 
-  async function addFriendByCode() {
+  async function addFriendByCode(codeOverride) {
     if (!account || !account.token) return;
     const input = document.getElementById("friendCodeInput");
-    if (!input) return;
-    const code = input.value.trim().toUpperCase();
+    const code = String(codeOverride || (input && input.value) || "").trim().toUpperCase();
     if (code.length !== 6) {
-      setFriendStatus("好友码是 6 位，字母和数字都可以。");
+      showToast("好友码是 6 位，字母和数字都可以。", 3000);
       return;
     }
-    const button = document.querySelector("[data-friend-add]");
-    if (button) button.disabled = true;
-    setFriendStatus("正在送好友申请…");
     try {
       const result = await cloudApi.requestFriend(account, code);
       if (result && result.status === "friends") {
@@ -6692,8 +6580,7 @@ import { mountGarden, unmountGarden } from "./ui/mountGarden.js";
       }
       await loadTown();
     } catch (error) {
-      setFriendStatus(cloudErrorMessage(error));
-      if (button && button.isConnected) button.disabled = false;
+      showToast(cloudErrorMessage(error), 3600);
     }
   }
 
