@@ -7,6 +7,12 @@
       <span class="nw-chip nw-base" :class="{ 'is-low': snapshot.baseHp <= 30 }">
         <small>门板</small><b>{{ snapshot.baseHp }}/{{ snapshot.baseMax }}</b>
       </span>
+      <span
+        v-if="snapshot.modifier.name"
+        class="nw-chip nw-modifier-chip"
+        :class="'tone-' + snapshot.modifier.tone"
+        :title="snapshot.modifier.desc"
+      ><small>今日</small><b>{{ snapshot.modifier.name }}</b></span>
       <div class="nw-controls">
         <button class="link-btn" type="button" @click="handlers.onPause">
           {{ snapshot.paused ? "继续" : "暂停" }}
@@ -70,6 +76,9 @@
         <h4>第 {{ snapshot.level }} 夜</h4>
         <p>雾从邮路尽头漫上来。把信封草、邮票花和彩纸藤种在格子里，别让影子摸到门板。</p>
         <p class="nw-overlay-note">相同的两株、或者有配方的两株，种在同一格就能融合。</p>
+        <p v-if="snapshot.modifier.name" class="nw-overlay-note">
+          今日词条「{{ snapshot.modifier.name }}」：{{ snapshot.modifier.desc }}{{ snapshot.modifier.rewardText ? ` · ${snapshot.modifier.rewardText}` : "" }}
+        </p>
         <div class="nw-overlay-actions">
           <button class="primary-btn" type="button" @click="handlers.onStart">开始守夜</button>
           <button class="secondary-btn" type="button" @click="handlers.onClose">回邮局</button>

@@ -153,6 +153,26 @@ const ENEMIES = {
 const UNITS = { ...TOWERS };
 for (const recipe of RECIPES) UNITS[recipe.id] = recipe;
 
+export const NW_MODIFIERS = [
+  { id: "calm", name: "平静夜", tone: "easy", desc: "灯油收入 +25%。", oil: 1.25, reward: 1 },
+  { id: "steady", name: "顺手", tone: "easy", desc: "植物冷却 -10%。", cooldown: 0.9, reward: 0.9 },
+  { id: "fog", name: "浓雾", tone: "hard", desc: "植物的射程缩短到 3 格。", range: 3, reward: 1.3 },
+  { id: "dry", name: "油荒", tone: "hard", desc: "灯油收入 -30%。", oil: 0.7, reward: 1.3 },
+  { id: "rush", name: "急脚", tone: "hard", desc: "影子移动速度 +20%。", speed: 1.2, reward: 1.25 },
+  { id: "swarm", name: "潮涌", tone: "hard", desc: "每一波多来一个影子。", extra: 1, reward: 1.25 },
+  { id: "brittle", name: "脆纸", tone: "hard", desc: "植物生命 -20%。", towerHp: 0.8, reward: 1.25 },
+  { id: "thick", name: "厚影", tone: "hard", desc: "影子生命 +15%。", hp: 1.15, reward: 1.3 }
+];
+
+// 每天（本地时间）一条，按日序号散列；同一天刷新页面不会变。
+export function dailyModifier(date = new Date()) {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  const day = Math.floor(local.getTime() / 86400000);
+  let hash = (day * 2654435761) >>> 0;
+  hash = (hash ^ (hash >>> 13)) >>> 0;
+  return NW_MODIFIERS[hash % NW_MODIFIERS.length];
+}
+
 export const NW_TALENTS = [
   { id: "wick", name: "灯芯", icon: "sun", max: 3, desc: "开局多 8 点灯油 / 级" },
   { id: "powder", name: "火漆", icon: "seal", max: 3, desc: "所有植物伤害 +8% / 级" },
@@ -217,13 +237,29 @@ export function nightRewards(level) {
 export function createNightWatch({
   level = 1,
   talents = {},
+  modifier = null,
   onFinish = () => {},
   rng = Math.random
 } = {}) {
+  const mod = {
+    id: "plain",
+    name: "",
+    desc: "",
+    tone: "calm",
+    oil: 1,
+    speed: 1,
+    range: Infinity,
+    extra: 0,
+    towerHp: 1,
+    hp: 1,
+    cooldown: 1,
+    reward: 1,
+    ...(modifier || {})
+  };
   const nightLevel = Math.max(1, Math.floor(level));
   const waveTotal = nightWaveCount(nightLevel);
-  const hpMul = nightHpScale(nightLevel);
-  const speedMul = 1 + Math.min(0.35, 0.03 * (nightLevel - 1));
+  const hpMul = nightHpScale(nightLevel) * mod.hp;
+  const speedMul = (1 + Math.min(0.35, 0.03 * (nightLevel - 1))) * mod.speed;
   const bonus = talentBonus(talents);
   const baseMax = NW_BASE_HP + bonus.baseHp;
 
@@ -251,7 +287,7 @@ export function createNightWatch({
   }
 
   function buildWave(index) {
-    const count = 3 + index + Math.floor((nightLevel - 1) / 3);
+    const count = 3 + index + Math.floor((nightLevel - 1) / 3) + mod.extra;
     const list = [];
     for (let i = 0; i < count; i += 1) {
       const roll = rng();
@@ -321,8 +357,8 @@ export function createNightWatch({
       type,
       col,
       row,
-      hp: Math.round(def.hp * bonus.hp),
-      maxHp: Math.round(def.hp * bonus.hp),
+      hp: Math.round(def.hp * bonus.hp * mod.towerHp),
+      maxHp: Math.round(def.hp * bonus.hp * mod.towerHp),
       cool: 0.2,
       oilTimer: def.interval || 0,
       burstTimer: def.interval || 0,
@@ -340,7 +376,10 @@ export function createNightWatch({
 
   function shoot(tower, def) {
     const candidates = enemies.filter(
-      (enemy) => enemy.row === tower.row && enemy.x >= tower.col - 0.1
+      (enemy) =>
+        enemy.row === tower.row &&
+        enemy.x >= tower.col - 0.1 &&
+        enemy.x - tower.col <= mod.range
     );
     if (!candidates.length) return;
     if (def.pierce) {
@@ -363,7 +402,7 @@ export function createNightWatch({
         kind: "bolt"
       });
     }
-    tower.cool = def.cooldown * bonus.cooldown;
+    tower.cool = def.cooldown * bonus.cooldown * mod.cooldown;
   }
 
   function burst(tower, def) {
@@ -402,7 +441,7 @@ export function createNightWatch({
       if (def.oil) {
         tower.oilTimer -= dt;
         if (tower.oilTimer <= 0) {
-          oil = Math.min(999, oil + def.oil);
+          oil = Math.min(999, oil + def.oil * mod.oil);
           tower.oilTimer = def.interval;
         }
       }
@@ -420,6 +459,15 @@ export function createNightWatch({
     }
   }
 
+  function scaledRewards(base) {
+    return {
+      stamps: Math.round(base.stamps * mod.reward),
+      ink: Math.max(1, Math.round(base.ink * mod.reward)),
+      paper: Math.round(base.paper * mod.reward),
+      wax: base.wax ? Math.max(1, Math.round(base.wax * mod.reward)) : 0
+    };
+  }
+
   function finish(won) {
     if (phase === "won" || phase === "lost") return;
     phase = won ? "won" : "lost";
@@ -430,7 +478,7 @@ export function createNightWatch({
       waves: waveTotal,
       kills,
       baseHp,
-      rewards: won ? nightRewards(nightLevel) : null
+      rewards: won ? scaledRewards(nightRewards(nightLevel)) : null
     };
     onFinish(result);
   }
@@ -442,7 +490,7 @@ export function createNightWatch({
     if (!dt) return;
     simTime += dt;
     effects = [];
-    oil = Math.min(999, oil + (1.4 + bonus.drip) * dt);
+    oil = Math.min(999, oil + (1.4 + bonus.drip) * mod.oil * dt);
 
     if (phase === "break") {
       updateTowers(dt);
@@ -548,8 +596,8 @@ export function createNightWatch({
       oil -= def.cost;
       existing.type = recipe.id;
       existing.fusion = true;
-      existing.maxHp = Math.round(recipe.hp * bonus.hp);
-      existing.hp = Math.round(recipe.hp * bonus.hp);
+      existing.maxHp = Math.round(recipe.hp * bonus.hp * mod.towerHp);
+      existing.hp = Math.round(recipe.hp * bonus.hp * mod.towerHp);
       existing.cool = 0.3;
       existing.oilTimer = recipe.interval || 0;
       existing.burstTimer = recipe.interval || 0;
@@ -648,6 +696,18 @@ export function createNightWatch({
         to: effect.to,
         kind: effect.kind
       })),
+      modifier: {
+        id: mod.id,
+        name: mod.name,
+        desc: mod.desc,
+        tone: mod.tone,
+        rewardText:
+          mod.reward > 1
+            ? `奖励 +${Math.round((mod.reward - 1) * 100)}%`
+            : mod.reward < 1
+              ? `奖励 -${Math.round((1 - mod.reward) * 100)}%`
+              : ""
+      },
       spots: spots(),
       fusionHints:
         selected && TOWERS[selected]

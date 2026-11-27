@@ -37,6 +37,8 @@ import {
   NW_TOWER_LIST,
   NW_RECIPE_LIST,
   NW_TALENTS,
+  NW_MODIFIERS,
+  dailyModifier,
   talentCost,
   talentBonus,
   NW_LANES,
@@ -4532,6 +4534,32 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
   let nightTimer = 0;
   let nightSpeed = 1;
   let nightLevel = 1;
+  let nightModifierOverride = "";
+
+  function currentNightModifier() {
+    if (nightModifierOverride) {
+      return (
+        NW_MODIFIERS.find((modifier) => modifier.id === nightModifierOverride) ||
+        dailyModifier()
+      );
+    }
+    return dailyModifier();
+  }
+
+  function nightModifierSnapshot(modifier) {
+    return {
+      id: modifier.id,
+      name: modifier.name,
+      desc: modifier.desc,
+      tone: modifier.tone,
+      rewardText:
+        modifier.reward > 1
+          ? `奖励 +${Math.round((modifier.reward - 1) * 100)}%`
+          : modifier.reward < 1
+            ? `奖励 -${Math.round((1 - modifier.reward) * 100)}%`
+            : ""
+    };
+  }
 
   function nightPanelSnapshot() {
     const progress = state.nightWatch;
@@ -4567,6 +4595,7 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
       towerCount: towers.filter((tower) => tower.unlocked).length,
       recipeCount: recipes.filter((recipe) => recipe.unlocked).length,
       points: progress.points,
+      modifier: nightModifierSnapshot(currentNightModifier()),
       talentSummary: nightTalentSummary(progress.talents),
       talents: NW_TALENTS.map((talent) => {
         const level = Math.max(
@@ -4655,6 +4684,7 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
     nightEngine = createNightWatch({
       level: nightLevel,
       talents: state.nightWatch.talents,
+      modifier: currentNightModifier(),
       onFinish: handleNightFinish
     });
     pushNightSnapshot();
@@ -7368,7 +7398,8 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
           return placed;
         },
         nightwatchWin: () => { if (nightEngine) { nightEngine.forceWin(); pushNightSnapshot(); } },
-        nightwatchLose: () => { if (nightEngine) { nightEngine.forceLose(); pushNightSnapshot(); } }
+        nightwatchLose: () => { if (nightEngine) { nightEngine.forceLose(); pushNightSnapshot(); } },
+        setNightModifier: (id) => { nightModifierOverride = id || ""; }
       };
     }
     requestAnimationFrame(gameLoop);

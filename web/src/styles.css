@@ -6219,3 +6219,74 @@ h3 {
     width: 11%;
   }
 }
+
+/* daily modifier */
+.nw-modifier {
+  border: 1px dashed var(--line-strong);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: var(--paper);
+}
+
+.nw-modifier.tone-hard {
+  border-color: rgba(182, 78, 94, 0.4);
+  background: rgba(231, 161, 170, 0.1);
+}
+
+.nw-modifier.tone-easy {
+  border-color: rgba(98, 141, 101, 0.45);
+  background: rgba(184, 212, 173, 0.16);
+}
+
+.nw-modifier-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.nw-modifier-kicker {
+  color: var(--berry-deep);
+  font-family: var(--font-data);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+}
+
+.nw-modifier-head b {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--ink);
+}
+
+.nw-modifier-reward {
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(242, 200, 109, 0.24);
+  color: #7a5a17;
+  font-family: var(--font-data);
+  font-size: 10.5px;
+}
+
+.nw-modifier p {
+  margin: 4px 0 2px;
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.nw-modifier small {
+  color: var(--muted);
+  font-size: 10.5px;
+}
+
+.nw-modifier-chip.tone-hard {
+  border-color: rgba(182, 78, 94, 0.45);
+  background: rgba(231, 161, 170, 0.16);
+}
+
+.nw-modifier-chip.tone-easy {
+  border-color: rgba(98, 141, 101, 0.45);
+  background: rgba(184, 212, 173, 0.2);
+}

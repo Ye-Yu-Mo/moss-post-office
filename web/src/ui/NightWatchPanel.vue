@@ -15,6 +15,16 @@
       <span><small>打散</small><b>{{ snapshot.kills }} 个影子</b></span>
     </div>
 
+    <div class="nw-modifier" :class="'tone-' + snapshot.modifier.tone">
+      <div class="nw-modifier-head">
+        <span class="nw-modifier-kicker">今日词条</span>
+        <b>{{ snapshot.modifier.name }}</b>
+        <span v-if="snapshot.modifier.rewardText" class="nw-modifier-reward">{{ snapshot.modifier.rewardText }}</span>
+      </div>
+      <p>{{ snapshot.modifier.desc }}</p>
+      <small>每天 0 点换一条，失败可以原地重试。</small>
+    </div>
+
     <p class="nw-next">{{ snapshot.nextText }}</p>
 
     <div class="nw-section">
