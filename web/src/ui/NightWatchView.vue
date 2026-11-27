@@ -26,6 +26,26 @@
       </div>
     </div>
 
+    <div v-if="snapshot.boons.length" class="nw-boons">
+      <div class="nw-boons-head">
+        <b>波间补给</b>
+        <small>选一项，下一波开始前生效（{{ Math.ceil(snapshot.breakLeft) }} 秒后跳过）</small>
+      </div>
+      <div class="nw-boon-grid">
+        <button
+          v-for="boon in snapshot.boons"
+          :key="boon.id"
+          class="nw-boon"
+          type="button"
+          @click.stop="handlers.onBoon(boon.id)"
+        >
+          <span class="nw-boon-icon" aria-hidden="true" v-html="icons[boon.icon] || ''"></span>
+          <b>{{ boon.name }}</b>
+          <small>{{ boon.desc }}</small>
+        </button>
+      </div>
+    </div>
+
     <div v-if="snapshot.nextWave.enemies.length" class="nw-wave-preview">
       <span class="nw-wave-label">{{ snapshot.nextWave.label }} · {{ snapshot.nextWave.number }}/{{ snapshot.waveTotal }}</span>
       <span v-for="enemy in snapshot.nextWave.enemies" :key="enemy.type" class="nw-wave-chip" :class="{ 'is-boss': enemy.boss }">
@@ -33,6 +53,10 @@
         <small>{{ enemy.name }}</small><b>×{{ enemy.count }}</b>
       </span>
       <span v-if="snapshot.blocked.length" class="nw-wave-fog">雾障 {{ snapshot.blocked.length }} 格</span>
+      <span v-if="snapshot.buffs.damage" class="nw-buff-chip">伤害 +{{ snapshot.buffs.damage }}%</span>
+      <span v-if="snapshot.buffs.drip" class="nw-buff-chip">灯油 +{{ snapshot.buffs.drip }}/秒</span>
+      <span v-if="snapshot.buffs.cooldown" class="nw-buff-chip">冷却 -{{ snapshot.buffs.cooldown }}%</span>
+      <span v-if="snapshot.buffs.slow" class="nw-buff-chip">移速 -{{ snapshot.buffs.slow }}%</span>
     </div>
 
     <div v-if="snapshot.phase === 'ready'" class="nw-ready-bar">

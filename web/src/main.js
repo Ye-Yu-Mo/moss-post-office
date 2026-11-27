@@ -5228,6 +5228,12 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
         nightEngine.select(id);
         pushNightSnapshot();
       },
+      onBoon: (id) => {
+        if (!nightEngine) return;
+        const result = nightEngine.chooseBoon(id);
+        if (result.ok) showToast(`带上补给：${result.name}。`, 2400);
+        pushNightSnapshot();
+      },
       onSell: (col, row) => {
         if (!nightEngine) return;
         const result = nightEngine.sell(Number(col), Number(row));
@@ -8219,6 +8225,12 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
         nightwatch: () => (nightEngine ? nightEngine.snapshot() : null),
         nightwatchOil: (amount) => { if (nightEngine) nightEngine.addOil(amount); },
         nightwatchSpawn: (type, row) => { if (nightEngine) nightEngine.spawn(type, row); },
+        nightwatchTick: (seconds) => {
+          if (!nightEngine) return;
+          const total = Math.max(0, Number(seconds) || 0);
+          for (let t = 0; t < total; t += 0.05) nightEngine.tick(0.05);
+          pushNightSnapshot();
+        },
         nightwatchSelect: (type) => {
           if (!nightEngine) return null;
           nightEngine.select(type);

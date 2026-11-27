@@ -472,6 +472,15 @@ export function blockedCellsFor(level) {
   return cells;
 }
 
+const BOONS = [
+  { id: "oil", name: "油价补贴", icon: "tea", desc: "立刻 +40 灯油。" },
+  { id: "power", name: "加急油墨", icon: "seal", desc: "本夜植物伤害 +15%。" },
+  { id: "drip", name: "细流", icon: "rain", desc: "本夜灯油自然增长 +0.6/秒。" },
+  { id: "base", name: "门闩加固", icon: "mailbox", desc: "门板恢复 20 点（不超过上限）。" },
+  { id: "cool", name: "顺笔", icon: "wind", desc: "本夜植物冷却 -10%。" },
+  { id: "slow", name: "拦路雾", icon: "mist", desc: "本夜影子移速 -8%。" }
+];
+
 // 每天（本地时间）一条，按日序号散列；同一天刷新页面不会变。
 export function dailyModifier(date = new Date()) {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
@@ -631,6 +640,12 @@ export function createNightWatch({
   let simTime = 0;
   let result = null;
   let notices = [];
+  let boons = [];
+  let boonChosen = false;
+  let boonDamage = 1;
+  let boonDrip = 0;
+  let boonCooldown = 1;
+  let boonSpeed = 1;
 
   function waveGap() {
     return Math.max(1.15, 2.5 - nightLevel * 0.06 - wave * 0.05);
@@ -656,8 +671,41 @@ export function createNightWatch({
     return list.map((type, i) => ({ type, at: 1.8 + i * gap }));
   }
 
+  function rollBoons(waveNumber) {
+    const random = levelRandom(nightLevel * 1000 + waveNumber * 37 + 11);
+    const pool = [...BOONS];
+    for (let i = pool.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(random() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    return pool.slice(0, 3).map((boon) => ({
+      id: boon.id,
+      name: boon.name,
+      icon: boon.icon,
+      desc: boon.desc
+    }));
+  }
+
+  function chooseBoon(id) {
+    if (phase !== "break" || boonChosen) return { ok: false, code: "unavailable" };
+    const boon = boons.find((item) => item.id === id);
+    if (!boon) return { ok: false, code: "unknown" };
+    if (id === "oil") oil = Math.min(999, oil + 40);
+    else if (id === "power") boonDamage *= 1.15;
+    else if (id === "drip") boonDrip += 0.6;
+    else if (id === "base") baseHp = Math.min(baseMax, baseHp + 20);
+    else if (id === "cool") boonCooldown = Math.max(0.6, boonCooldown * 0.9);
+    else if (id === "slow") boonSpeed = Math.max(0.6, boonSpeed * 0.92);
+    else return { ok: false, code: "unknown" };
+    boonChosen = true;
+    breakClock = Math.min(breakClock, 1.8);
+    return { ok: true, name: boon.name };
+  }
+
   function beginWave(index) {
     wave = index;
+    boons = [];
+    boonChosen = false;
     waveQueue = waves[index] || [];
     spawnIndex = 0;
     waveClock = 0;
@@ -764,7 +812,7 @@ export function createNightWatch({
         enemy.x - tower.col <= mod.range
     );
     if (!candidates.length) return;
-    const power = def.damage * auraBonusFor(tower);
+    const power = def.damage * auraBonusFor(tower) * boonDamage;
     if (def.pierce) {
       let far = tower.col;
       for (const enemy of candidates) {
@@ -788,7 +836,7 @@ export function createNightWatch({
         kind: "bolt"
       });
     }
-    tower.cool = def.cooldown * bonus.cooldown * mod.cooldown * deep.cooldown;
+    tower.cool = def.cooldown * bonus.cooldown * mod.cooldown * deep.cooldown * boonCooldown;
   }
 
   function burst(tower, def) {
@@ -796,14 +844,14 @@ export function createNightWatch({
     const rows = new Set();
     for (const enemy of enemies) {
       if (def.global) {
-        hurt(enemy, def.burst * mod.burst, def);
+        hurt(enemy, def.burst * mod.burst * boonDamage, def);
         hit += 1;
         rows.add(enemy.row);
         continue;
       }
       if (enemy.row !== tower.row) continue;
       if (Math.abs(enemy.x - tower.col) <= def.radius) {
-        hurt(enemy, def.burst * mod.burst, def);
+        hurt(enemy, def.burst * mod.burst * boonDamage, def);
         hit += 1;
         rows.add(enemy.row);
       }
@@ -907,7 +955,7 @@ export function createNightWatch({
     if (!dt) return;
     simTime += dt;
     effects = [];
-    oil = Math.min(999, oil + (1.4 + bonus.drip) * mod.oil * deep.oil * dt);
+    oil = Math.min(999, oil + (1.4 + bonus.drip + boonDrip) * mod.oil * deep.oil * dt);
 
     if (phase === "break") {
       updateTowers(dt);
@@ -962,7 +1010,7 @@ export function createNightWatch({
         }
       }
       const slow = enemy.slowUntil > simTime ? enemy.slowFactor : 1;
-      enemy.x -= def.speed * speedMul * slow * boost * dt;
+      enemy.x -= def.speed * speedMul * slow * boost * boonSpeed * dt;
       if (enemy.x < -0.35) {
         enemy.hp = 0;
         enemy.leaked = true;
@@ -999,7 +1047,9 @@ export function createNightWatch({
         finish(true);
       } else {
         phase = "break";
-        breakClock = 3.2;
+        breakClock = 6;
+        boonChosen = false;
+        boons = rollBoons(wave + 1);
         oil = Math.min(999, oil + mod.waveOil);
       }
     }
@@ -1219,6 +1269,13 @@ export function createNightWatch({
               ? `奖励 -${Math.round((1 - mod.reward) * 100)}%`
               : ""
       },
+      boons: phase === "break" && !boonChosen ? boons : [],
+      buffs: {
+        damage: Math.round((boonDamage - 1) * 100),
+        drip: Number(boonDrip.toFixed(1)),
+        cooldown: Math.round((1 - boonCooldown) * 100),
+        slow: Math.round((1 - boonSpeed) * 100)
+      },
       notices: notices
         .filter((notice) => simTime - notice.at < 2.5)
         .map((notice) => ({ id: notice.id, text: notice.text })),
@@ -1259,6 +1316,7 @@ export function createNightWatch({
     select,
     place,
     sell,
+    chooseBoon,
     spots,
     snapshot,
     setSpeed,
