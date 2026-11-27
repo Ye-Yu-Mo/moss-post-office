@@ -8,6 +8,8 @@ import { mountAlbum, unmountAlbum } from "./ui/mountAlbum.js";
 import { setAlbumSnapshot } from "./ui/albumStore.js";
 import { mountMoon, unmountMoon } from "./ui/mountMoon.js";
 import { setMoonSnapshot } from "./ui/moonStore.js";
+import { mountWorkshop, unmountWorkshop } from "./ui/mountWorkshop.js";
+import { setWorkshopSnapshot } from "./ui/workshopStore.js";
 
 (() => {
   "use strict";
@@ -1196,6 +1198,7 @@ import { setMoonSnapshot } from "./ui/moonStore.js";
   let lastOrdersSignature = "";
   let lastAlbumSignature = "";
   let lastMoonSignature = "";
+  let lastWorkshopSignature = "";
 
   const shopUi = new Map();
   const upgradeUi = new Map();
@@ -2272,117 +2275,78 @@ import { setMoonSnapshot } from "./ui/moonStore.js";
     });
   }
 
-  function buildUpgradePanel() {
-    upgradeUi.clear();
-    const materialWorkshop = `
-      <section class="material-workshop">
-        <div class="tree-head">
-          <span>材料工坊</span>
-          <span>${materialSummary()}</span>
-        </div>
-        <p class="tree-note">材料只在远行成功后带回；这里的升级永久生效，转生也会留下。</p>
-        ${MATERIAL_UPGRADES.map((item) => {
-          const purchased = hasMaterialUpgrade(item.id);
-          const affordable = (state.materials[item.material] || 0) >= item.cost;
-          return `
-            <article class="upgrade material-upgrade${purchased ? " purchased" : ""}">
-              <div class="up-icon" aria-hidden="true">${ICONS[item.icon]}</div>
-              <div class="up-copy">
-                <div class="up-name">${item.name}<span class="up-tag">远行 · 永久</span></div>
-                <div class="up-desc">${purchased ? "已经建好，永久生效。" : item.desc}</div>
-              </div>
-              ${purchased
-                ? `<span class="owned-mark">已建成</span>`
-                : `<button class="buy-btn" type="button" data-buy-mat-up="${item.id}" ${affordable ? "" : "disabled"}>
-                     <span class="cost">${item.cost}</span>
-                     <span class="unit">${EXP_MATERIALS[item.material].name}</span>
-                   </button>`}
-            </article>`;
-        }).join("")}
-      </section>`;
-    els.panelBody.innerHTML = UPGRADES.map((upgrade) => {
-      const purchased = ownedUpgradeSet.has(upgrade.id);
-      const unlocked = isUpgradeUnlocked(upgrade);
-      return `
-        <article class="upgrade${purchased ? " purchased" : ""}${!purchased && !unlocked ? " locked" : ""}" data-up="${upgrade.id}">
-          <div class="up-icon" aria-hidden="true">${ICONS[upgrade.icon]}</div>
-          <div class="up-copy">
-            <div class="up-name">
-              ${upgrade.name}
-              <span class="up-tag">${upgrade.effectLabel}</span>
-            </div>
-            <div class="up-desc" data-up-desc>${upgrade.desc}</div>
-          </div>
-          ${purchased
-            ? `<span class="owned-mark">已盖戳</span>`
-            : `<button class="buy-btn" type="button" data-buy-up="${upgrade.id}">
-                 <span class="cost" data-up-cost>—</span>
-                 <span class="unit" data-up-unit>邮票</span>
-               </button>`}
-        </article>`;
-    }).join("") + materialWorkshop;
-
-    UPGRADES.forEach((upgrade) => {
-      const row = els.panelBody.querySelector(`[data-up="${upgrade.id}"]`);
-      if (!row) return;
-      upgradeUi.set(upgrade.id, {
-        row,
-        desc: row.querySelector("[data-up-desc]"),
-        button: row.querySelector("[data-buy-up]"),
-        cost: row.querySelector("[data-up-cost]"),
-        unit: row.querySelector("[data-up-unit]")
-      });
-    });
-  }
-
-  function refreshUpgradeUi() {
-    if (!upgradeUi.size) return;
-    UPGRADES.forEach((upgrade) => {
-      const ui = upgradeUi.get(upgrade.id);
-      if (!ui) return;
+  function workshopSnapshot() {
+    const upgrades = UPGRADES.map((upgrade) => {
       const purchased = ownedUpgradeSet.has(upgrade.id);
       const unlocked = isUpgradeUnlocked(upgrade);
       const affordable = canAfford(upgrade.cost);
-
-      ui.row.classList.toggle("purchased", purchased);
-      ui.row.classList.toggle("locked", !purchased && !unlocked);
-
-      if (purchased) {
-        setText(ui.desc, "已经收进邮册，永久生效。");
-        return;
-      }
-
-      setText(
-        ui.desc,
-        unlocked
-          ? upgrade.desc
-          : `累计赚到 ${formatNumber(upgrade.unlock)}张邮票后解锁。`
-      );
-
-      if (!ui.button) return;
-      ui.button.disabled = !unlocked || !affordable;
-      ui.button.classList.toggle("can-buy", unlocked && affordable);
-      ui.button.classList.toggle("locked-btn", !unlocked);
-      if (!unlocked) {
-        setText(ui.cost, "未解锁");
-        setText(ui.unit, "再等等");
-        ui.button.setAttribute(
-          "aria-label",
-          `${upgrade.name}尚未解锁，累计赚到 ${formatNumber(upgrade.unlock)}张邮票后可用`
-        );
-        ui.button.title = "等邮册翻到这一页。";
-      } else {
-        setText(ui.cost, formatNumber(upgrade.cost));
-        setText(ui.unit, "邮票");
-        ui.button.setAttribute(
-          "aria-label",
-          `购买${upgrade.name}，花费 ${formatNumber(upgrade.cost)}张邮票`
-        );
-        ui.button.title = affordable
-          ? `收下${upgrade.name}`
-          : `还差 ${formatNumber(Math.max(0, upgrade.cost - Math.floor(state.stamps)))}张邮票`;
-      }
+      return {
+        id: upgrade.id,
+        name: upgrade.name,
+        desc: purchased
+          ? "已经收进邮册，永久生效。"
+          : unlocked
+            ? upgrade.desc
+            : `累计赚到 ${formatNumber(upgrade.unlock)}张邮票后解锁。`,
+        icon: ICONS[upgrade.icon],
+        effectLabel: upgrade.effectLabel,
+        purchased,
+        unlocked,
+        canBuy: !purchased && unlocked && affordable,
+        costText: unlocked ? formatNumber(upgrade.cost) : "未解锁",
+        unitText: unlocked ? "邮票" : "再等等",
+        ariaLabel: !unlocked
+          ? `${upgrade.name}尚未解锁，累计赚到 ${formatNumber(upgrade.unlock)}张邮票后可用`
+          : `购买${upgrade.name}，花费 ${formatNumber(upgrade.cost)}张邮票`,
+        title: !unlocked
+          ? "等邮册翻到这一页。"
+          : affordable
+            ? `收下${upgrade.name}`
+            : `还差 ${formatNumber(Math.max(0, upgrade.cost - Math.floor(state.stamps)))}张邮票`
+      };
     });
+
+    const materialUpgrades = MATERIAL_UPGRADES.map((item) => {
+      const purchased = hasMaterialUpgrade(item.id);
+      const affordable = (state.materials[item.material] || 0) >= item.cost;
+      return {
+        id: item.id,
+        name: item.name,
+        desc: item.desc,
+        icon: ICONS[item.icon],
+        materialName: EXP_MATERIALS[item.material].name,
+        cost: item.cost,
+        purchased,
+        affordable
+      };
+    });
+
+    return {
+      upgrades,
+      materialUpgrades,
+      materialsText: materialSummary()
+    };
+  }
+
+  function buildUpgradePanel() {
+    unmountWorkshop();
+    els.panelBody.innerHTML = `<div data-workshop-root></div>`;
+    mountWorkshop(els.panelBody.querySelector("[data-workshop-root]"), {
+      onBuyUpgrade: buyUpgrade,
+      onBuyMaterialUpgrade: buyMaterialUpgrade
+    });
+    const next = workshopSnapshot();
+    lastWorkshopSignature = JSON.stringify(next);
+    setWorkshopSnapshot(next);
+  }
+
+  function refreshUpgradeUi() {
+    if (!state || activeTab !== "upgrades") return;
+    const next = workshopSnapshot();
+    const signature = JSON.stringify(next);
+    if (signature === lastWorkshopSignature) return;
+    lastWorkshopSignature = signature;
+    setWorkshopSnapshot(next);
   }
 
   function achievementBonusPercent() {
@@ -4552,6 +4516,7 @@ import { setMoonSnapshot } from "./ui/moonStore.js";
     if (name !== "orders") unmountOrders();
     if (name !== "album") unmountAlbum();
     if (name !== "moon") unmountMoon();
+    if (name !== "upgrades") unmountWorkshop();
 
     if (name === "posties") {
       buildShopPanel();
