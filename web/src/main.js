@@ -2,6 +2,8 @@ import * as cloudApi from "./cloud.js";
 import { deriveVerifier, proveVerifier } from "./crypto.js";
 import { mountTown, unmountTown } from "./ui/mountTown.js";
 import { mountAccount, unmountAccount } from "./ui/mountAccount.js";
+import { mountOrders, unmountOrders } from "./ui/mountOrders.js";
+import { setOrdersSnapshot } from "./ui/ordersStore.js";
 
 (() => {
   "use strict";
@@ -1187,6 +1189,7 @@ import { mountAccount, unmountAccount } from "./ui/mountAccount.js";
   let moonBuilt = false;
   let dispatchBuilt = false;
   let dispatchUi = null;
+  let lastOrdersSignature = "";
 
   const shopUi = new Map();
   const upgradeUi = new Map();
@@ -2914,153 +2917,93 @@ import { mountAccount, unmountAccount } from "./ui/mountAccount.js";
     return `${formatNumber(orderProgressValue(order))} / ${formatNumber(order.target)}`;
   }
 
-  function acceptedOrderCard(order) {
-    const template = orderTpl(order.tpl);
-    if (!template) return "";
-    const cost = orderMaterialCost(order);
-    const costText = materialCostText(cost);
-    const canPay = canPayMaterials(cost);
-    const ready = orderConditionMet(order) && canPay;
-    const note = orderConditionNote(order) || (!canPay ? `还差材料：${costText}` : "");
-    const rewardMaterial = materialGainText(template.materialReward);
-    const progress = completionPercent(orderProgressValue(order), order.target);
-    return `
-      <article class="order-card is-accepted${ready ? " is-ready" : ""}" data-order="${order.id}" aria-label="${template.title}，${template.unit} ${orderProgressValue(order)} / ${order.target}">
-        <div class="order-top">
-          <span class="order-sender">${template.sender}</span>
-          <span class="order-tag">${orderTagFor(order)}</span>
-        </div>
-        <h4 class="order-title">${template.title}</h4>
-        <p class="order-quote">“${template.quote}”</p>
-        <div class="order-goal">
-          <span>${template.unit}</span>
-          <b data-order-progress>${orderProgressText(order)}</b>
-        </div>
-        <div class="order-bar"><span data-order-fill style="width:${progress}%"></span></div>
-        ${costText ? `<div class="order-material-cost">交付需 ${costText}</div>` : ""}
-        <div class="order-reward">
-          <span>+${formatNumber(orderRewardStamps(order))} 邮票</span>
-          <span>+${formatNumber(orderRewardInk(order))} 墨点</span>
-          ${rewardMaterial ? `<span>+${rewardMaterial}</span>` : ""}
-        </div>
-        <p class="order-note" data-order-note${note ? "" : " hidden"}>${note}</p>
-        <div class="order-actions">
-          <span class="order-timer" data-order-time>剩 ${formatTripClock(orderTimeLeft(order))}</span>
-          <button class="order-deliver" type="button" data-deliver-order="${order.id}" ${ready ? "" : "disabled"}>交付</button>
-          <button class="link-btn order-drop" type="button" data-drop-order="${order.id}">放下</button>
-        </div>
-      </article>`;
-  }
+  function ordersSnapshot() {
+    const contract = currentContract();
+    const accepted = state.accepted
+      .map((order) => {
+        const template = orderTpl(order.tpl);
+        if (!template) return null;
+        const cost = orderMaterialCost(order);
+        const canPay = canPayMaterials(cost);
+        const progress = orderProgressValue(order);
+        return {
+          id: order.id,
+          sender: template.sender,
+          title: template.title,
+          quote: template.quote,
+          tag: orderTagFor(order),
+          unit: template.unit,
+          progress,
+          target: order.target,
+          percent: Math.round(completionPercent(progress, order.target) * 10) / 10,
+          stamps: orderRewardStamps(order),
+          ink: orderRewardInk(order),
+          costText: materialCostText(cost),
+          rewardText: materialGainText(template.materialReward),
+          ready: orderConditionMet(order) && canPay,
+          note: orderConditionNote(order) || (!canPay ? `还差材料：${materialCostText(cost)}` : ""),
+          expiresAt: order.expiresAt
+        };
+      })
+      .filter(Boolean);
 
-  function offerOrderCard(offer) {
-    const template = orderTpl(offer.tpl);
-    if (!template) return "";
-    const full = state.accepted.length >= orderSlots();
-    const costText = materialCostText(template.materialCost);
-    const rewardMaterial = materialGainText(template.materialReward);
-    return `
-      <article class="order-card is-offer" data-offer="${offer.id}">
-        <div class="order-top">
-          <span class="order-sender">${template.sender}</span>
-          <span class="order-tag">${orderTagFor(offer)}</span>
-        </div>
-        <h4 class="order-title">${template.title}</h4>
-        <p class="order-quote">“${template.quote}”</p>
-        <div class="order-goal">
-          <span>${template.unit}</span>
-          <b>${formatNumber(offer.target)}</b>
-        </div>
-        ${costText ? `<div class="order-material-cost">交付需 ${costText}</div>` : ""}
-        <div class="order-reward">
-          <span>+${formatNumber(Math.round(offer.stamps * orderRewardScale()))} 邮票</span>
-          <span>+${formatNumber(Math.round(offer.ink * inkMultiplier()))} 墨点</span>
-          ${rewardMaterial ? `<span>+${rewardMaterial}</span>` : ""}
-        </div>
-        <div class="order-actions">
-          <span class="order-timer">约 ${Math.round(offer.minutes * orderDeadlineScale())} 分钟</span>
-          <button class="order-accept" type="button" data-accept-order="${offer.id}" ${full ? "disabled" : ""}>${full ? "柜台满了" : "接下"}</button>
-        </div>
-      </article>`;
+    const offers = state.offers
+      .map((offer) => {
+        const template = orderTpl(offer.tpl);
+        if (!template) return null;
+        return {
+          id: offer.id,
+          sender: template.sender,
+          title: template.title,
+          quote: template.quote,
+          tag: orderTagFor(offer),
+          unit: template.unit,
+          target: offer.target,
+          stamps: Math.round(offer.stamps * orderRewardScale()),
+          ink: Math.round(offer.ink * inkMultiplier()),
+          minutes: Math.round(offer.minutes * orderDeadlineScale()),
+          costText: materialCostText(template.materialCost),
+          rewardText: materialGainText(template.materialReward)
+        };
+      })
+      .filter(Boolean);
+
+    return {
+      accepted,
+      offers,
+      slots: orderSlots(),
+      ink: state.ink,
+      rerollCost: INK_REROLL_COST,
+      canReroll: state.ink >= INK_REROLL_COST,
+      contract: contract ? { name: contract.name, desc: contract.desc } : null,
+      materialsText: materialSummary()
+    };
   }
 
   function buildOrdersPanel() {
     ensureOffers();
-    const accepted = state.accepted;
-    const offers = state.offers;
-    const slots = orderSlots();
-    const contract = currentContract();
-    els.panelBody.innerHTML = `
-      <div class="order-summary">
-        <div class="order-summary-copy">
-          <span class="order-kicker">来信柜台</span>
-          <p>柜台一次留得下 ${slots} 封。挑一封接下，在时限内送出去；送不到也不扣东西，只是信会被邮车带走。</p>
-        </div>
-        <div class="order-ink-box">
-          <span class="ink-line-mini"><span class="ink-mark" aria-hidden="true"></span>墨点 <b id="orderInk">${formatNumber(state.ink)}</b></span>
-          <span class="order-materials">材料 ${materialSummary()}</span>
-          <button class="order-reroll" type="button" data-reroll-orders ${state.ink < INK_REROLL_COST ? "disabled" : ""}>换一批 · ${INK_REROLL_COST}</button>
-        </div>
-      </div>
-      ${contract ? `<div class="order-contract"><span>${contract.name}</span>${contract.desc}</div>` : ""}
-      <div class="order-section">
-        <div class="order-section-head"><span>手上的信</span><span>${accepted.length} / ${slots}</span></div>
-        ${accepted.length
-          ? `<div class="order-list">${accepted.map(acceptedOrderCard).join("")}</div>`
-          : `<div class="order-empty">手上还没有信。柜台上的来信可以接下，时限内完成就能拿到邮票、墨点，有些信还会留下材料。</div>`}
-      </div>
-      <div class="order-section">
-        <div class="order-section-head"><span>柜台上的信</span><span>每完成 4 封，得 1 枚月光邮戳</span></div>
-        <div class="order-list order-offers">${offers.map(offerOrderCard).join("")}</div>
-      </div>
-      <p class="order-foot">完美盖戳能攒墨点；墨点可以换一批来信，也能让在途的邮路立刻回来。</p>
-    `;
-    refreshOrdersUi();
-    if (activeTab === "orders") {
-      const first = els.panelBody.querySelector("[data-accept-order]");
-      if (first && activeTab === "orders") {
-        /* keep default focus on tab; cards are reached by tabbing */
-      }
-    }
+    unmountOrders();
+    els.panelBody.innerHTML = `<div data-orders-root></div>`;
+    const root = els.panelBody.querySelector("[data-orders-root]");
+    mountOrders(root, {
+      onAccept: acceptOrder,
+      onDeliver: deliverOrder,
+      onDrop: openDropOrderModal,
+      onReroll: () => rerollOffers(),
+      formatNumber
+    });
+    const next = ordersSnapshot();
+    lastOrdersSignature = JSON.stringify(next);
+    setOrdersSnapshot(next);
   }
 
   function refreshOrdersUi() {
     if (!state || activeTab !== "orders") return;
-    const inkLabel = document.getElementById("orderInk");
-    if (inkLabel) setText(inkLabel, formatNumber(state.ink));
-
-    els.panelBody.querySelectorAll("[data-order]").forEach((card) => {
-      const id = Number(card.dataset.order);
-      const order = state.accepted.find((candidate) => candidate.id === id);
-      if (!order) return;
-      const value = orderProgressValue(order);
-      const progress = completionPercent(value, order.target);
-      const cost = orderMaterialCost(order);
-      const canPay = canPayMaterials(cost);
-      const ready = orderConditionMet(order) && canPay;
-      const note = orderConditionNote(order) || (!canPay ? `还差材料：${materialCostText(cost)}` : "");
-      const progressEl = card.querySelector("[data-order-progress]");
-      if (progressEl) setText(progressEl, orderProgressText(order));
-      const fill = card.querySelector("[data-order-fill]");
-      if (fill) fill.style.width = `${Math.round(progress * 10) / 10}%`;
-      const time = card.querySelector("[data-order-time]");
-      if (time) setText(time, `剩 ${formatTripClock(orderTimeLeft(order))}`);
-      card.classList.toggle("is-ready", ready);
-      const button = card.querySelector("[data-deliver-order]");
-      if (button) button.disabled = !ready;
-      const noteEl = card.querySelector("[data-order-note]");
-      if (noteEl) {
-        noteEl.textContent = note;
-        noteEl.hidden = !note;
-      }
-    });
-
-    const full = state.accepted.length >= orderSlots();
-    els.panelBody.querySelectorAll("[data-accept-order]").forEach((button) => {
-      button.disabled = full;
-      button.textContent = full ? "柜台满了" : "接下";
-    });
-    const reroll = els.panelBody.querySelector("[data-reroll-orders]");
-    if (reroll) reroll.disabled = state.ink < INK_REROLL_COST;
+    const next = ordersSnapshot();
+    const signature = JSON.stringify(next);
+    if (signature === lastOrdersSignature) return;
+    lastOrdersSignature = signature;
+    setOrdersSnapshot(next);
   }
 
   function acceptOrder(id, restoreFocus = false) {
@@ -4685,6 +4628,7 @@ import { mountAccount, unmountAccount } from "./ui/mountAccount.js";
     els.panelTitle.textContent = TAB_TITLES[name];
     if (els.panelEyebrow) els.panelEyebrow.textContent = TAB_EYEBROWS[name];
     els.buySwitch.hidden = name !== "posties";
+    if (name !== "orders") unmountOrders();
 
     if (name === "posties") {
       buildShopPanel();
