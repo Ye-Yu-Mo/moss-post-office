@@ -228,6 +228,22 @@ python3 scripts/reset_password.py --docker-container moss-postgres \
 
 脚本用 psql 变量传参，替换 verifier 并吊销该用户的全部会话；不会打印密码或 verifier。自动化可用 `--password-stdin`。本地 PG 可用 `--database-url postgres://localhost/moss`。
 
+## 回滚到 SQLite（保留路径）
+
+迁移时保留了时间戳备份：`moss-sync.sqlite-backup-*` 与 `data/moss.db.sqlite-backup-*`。
+
+```bash
+systemctl --user stop moss-sync
+rm -f ~/.config/systemd/user/moss-sync.service.d/postgres.conf
+cp moss-sync.sqlite-backup-<stamp> moss-sync
+cp data/moss.db.sqlite-backup-<stamp> data/moss.db
+systemctl --user daemon-reload
+systemctl --user start moss-sync
+```
+
+回滚后 PostgreSQL 里的新数据不会自动回写 SQLite，只用于紧急恢复。
+</br>
+
 ## 部署建议
 
 1. `cargo build --release`，把二进制和 systemd unit 放到服务器。
