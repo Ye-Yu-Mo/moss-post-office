@@ -202,6 +202,9 @@ async function main() {
   await page.waitForTimeout(400);
   check("expedition back returns to routes", (await page.locator("[data-dispatch-root]").count()) > 0);
 
+  await page.evaluate(() => {
+    window.__moss.state().nightWatch.night = 9;
+  });
   await page.locator(".room-btn", { hasText: "守夜" }).click();
   await page.waitForTimeout(500);
   check("night panel renders", (await page.locator(".nw-panel").count()) > 0);
@@ -209,6 +212,22 @@ async function main() {
   await page.waitForTimeout(500);
   check("night battle opens", (await page.locator(".nw-board").count()) > 0);
   check("night battle is not a modal", await page.locator("#modal").isHidden());
+  check("wave preview lists shadows", (await page.locator(".nw-wave-chip").count()) > 0);
+  check("blocked fog cells render", (await page.locator(".nw-cell.is-blocked[disabled]").count()) === 3);
+
+  await page.locator(".nw-overlay .primary-btn").click();
+  await page.waitForTimeout(300);
+  await page.evaluate(() => window.__moss.nightwatchOil(500));
+  await page.evaluate(() => window.__moss.nightwatchPlace("letter", 2, 1));
+  const beforeSell = await page.evaluate(() => window.__moss.nightwatch().oil);
+  await page.locator(".nw-tool").click();
+  await page.locator(".nw-cell").nth(1 * 8 + 2).click();
+  await page.waitForTimeout(400);
+  const sold = await page.evaluate(() => ({
+    oil: window.__moss.nightwatch().oil,
+    towers: window.__moss.nightwatch().towers.length
+  }));
+  check("shovel sells a plant", sold.towers === 0 && sold.oil > beforeSell, JSON.stringify(sold));
   await page.locator("[data-room-back='night']").click();
   await page.waitForTimeout(400);
   check("night back returns to panel", (await page.locator(".nw-panel").count()) > 0);

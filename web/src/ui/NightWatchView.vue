@@ -26,6 +26,15 @@
       </div>
     </div>
 
+    <div v-if="snapshot.nextWave.enemies.length" class="nw-wave-preview">
+      <span class="nw-wave-label">{{ snapshot.nextWave.label }} · {{ snapshot.nextWave.number }}/{{ snapshot.waveTotal }}</span>
+      <span v-for="enemy in snapshot.nextWave.enemies" :key="enemy.type" class="nw-wave-chip" :class="{ 'is-boss': enemy.boss }">
+        <span class="nw-wave-icon" v-html="icons[enemy.icon] || ''"></span>
+        <small>{{ enemy.name }}</small><b>×{{ enemy.count }}</b>
+      </span>
+      <span v-if="snapshot.blocked.length" class="nw-wave-fog">雾障 {{ snapshot.blocked.length }} 格</span>
+    </div>
+
     <div
       class="nw-board"
       :class="{ 'is-break': snapshot.phase === 'break', 'is-over': isOver, 'is-deep': snapshot.deepFog.active }"
@@ -43,13 +52,16 @@
           class="nw-cell"
           :class="{
             'is-spot': cell.spot === 'place',
-            'is-fuse': cell.spot === 'fuse'
+            'is-fuse': cell.spot === 'fuse',
+            'is-blocked': cell.blocked
           }"
           type="button"
-          :aria-label="cell.tower ? `${cell.tower.name}，生命 ${cell.tower.hp}` : `第 ${cell.row + 1} 行第 ${cell.col + 1} 格`"
-          @click="handlers.onCell(cell.col, cell.row)"
+          :disabled="cell.blocked"
+          :aria-label="cell.blocked ? '雾障，不能种植' : cell.tower ? `${cell.tower.name}，生命 ${cell.tower.hp}` : `第 ${cell.row + 1} 行第 ${cell.col + 1} 格`"
+          @click="handleCell(cell)"
         >
-          <span v-if="cell.tower" class="nw-unit" :class="{ 'is-fusion': cell.tower.fusion, 'is-tier2': cell.tower.tier >= 2, 'is-aura': cell.tower.aura }">
+          <span v-if="cell.blocked" class="nw-blocked" aria-hidden="true" v-html="icons.mist || ''"></span>
+          <span v-else-if="cell.tower" class="nw-unit" :class="{ 'is-fusion': cell.tower.fusion, 'is-tier2': cell.tower.tier >= 2, 'is-aura': cell.tower.aura }">
             <span class="nw-unit-icon" v-html="icons[cell.tower.icon] || ''"></span>
             <i class="nw-unit-hp"><i :style="{ width: cell.tower.percent + '%' }"></i></i>
           </span>
@@ -130,6 +142,16 @@
       </div>
     </div>
 
+    <div class="nw-tools">
+      <button
+        class="nw-tool"
+        :class="{ 'is-active': shovel }"
+        type="button"
+        @click="toggleShovel"
+      >铲子 <small>返还一半</small></button>
+      <span class="nw-tool-hint">{{ shovel ? "点一株植物铲掉，返还一半灯油。" : "选一张卡再点格子；融合体和普通植物都能铲。" }}</span>
+    </div>
+
     <div class="nw-cards">
       <button
         v-for="card in snapshot.cards"
@@ -143,7 +165,7 @@
         type="button"
         :disabled="!card.unlocked"
         :title="card.desc"
-        @click="handlers.onCard(card.id)"
+        @click="selectCard(card.id)"
       >
         <span class="nw-card-icon" v-html="icons[card.icon] || ''"></span>
         <b>{{ card.name }}</b>
@@ -158,7 +180,7 @@
 </template>
 
 <script setup>
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { NW_LANES, NW_COLS } from "../nightwatch.js";
 import { nightWatchStore } from "./nightWatchStore.js";
 
@@ -168,11 +190,32 @@ const props = defineProps({
   formatNumber: { type: Function, default: (value) => String(value) }
 });
 
+const handlers = props.handlers;
 const snapshot = computed(() => nightWatchStore.snapshot);
 const laneList = Array.from({ length: NW_LANES }, (_, index) => index);
 const isOver = computed(
   () => Boolean(snapshot.value) && ["won", "lost"].includes(snapshot.value.phase)
 );
+const shovel = ref(false);
+
+function toggleShovel() {
+  shovel.value = !shovel.value;
+}
+
+function selectCard(id) {
+  shovel.value = false;
+  handlers.onCard(id);
+}
+
+function handleCell(cell) {
+  if (cell.blocked) return;
+  if (shovel.value) {
+    if (cell.tower) handlers.onSell(cell.col, cell.row);
+    return;
+  }
+  handlers.onCell(cell.col, cell.row);
+}
+
 const medalNote = computed(() => {
   const source = snapshot.value;
   if (!source || !source.result || !source.result.won) return "";
@@ -191,6 +234,9 @@ const cells = computed(() => {
   const spots = new Map(
     source.spots.map((spot) => [`${spot.col},${spot.row}`, spot.kind])
   );
+  const blocked = new Set(
+    (source.blocked || []).map((cell) => `${cell.col},${cell.row}`)
+  );
   for (let row = 0; row < NW_LANES; row += 1) {
     for (let col = 0; col < NW_COLS; col += 1) {
       const key = `${col},${row}`;
@@ -199,7 +245,8 @@ const cells = computed(() => {
         col,
         row,
         tower: towers.get(key) || null,
-        spot: spots.get(key) || ""
+        spot: spots.get(key) || "",
+        blocked: blocked.has(key)
       });
     }
   }
@@ -209,7 +256,7 @@ const cells = computed(() => {
 const hintText = computed(() => {
   const source = snapshot.value;
   if (!source) return "";
-  if (source.phase === "ready") return "选一张卡，再点格子。第一夜先种两张邮票花，再补信封草。";
+  if (source.phase === "ready") return "选卡再点格子；雾障格不能种，铲子能把植物换回一半灯油。";
   if (isOver.value) return "这一夜结束了，收工不影响已经拿到的奖励。";
   if (!source.selected) {
     return "点一张卡开始种；金色格子和已有植物同格可以融合。";

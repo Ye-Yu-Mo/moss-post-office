@@ -440,6 +440,38 @@ export function deepFogFor(level) {
   return NW_DEEP_FOG[(level - 16) % NW_DEEP_FOG.length];
 }
 
+function levelRandom(seed) {
+  let state = seed >>> 0;
+  return () => {
+    state |= 0;
+    state = (state + 0x6d2b79f5) | 0;
+    let value = Math.imul(state ^ (state >>> 15), 1 | state);
+    value = (value + Math.imul(value ^ (value >>> 7), 61 | value)) ^ value;
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// 每夜固定的雾障格：第 3 夜起出现，最多 4 格，一行最多 1 格。
+export function blockedCellsFor(level) {
+  const night = Math.max(1, Math.floor(level));
+  if (night < 3) return [];
+  const count = night < 6 ? 1 : night < 9 ? 2 : night < 12 ? 3 : 4;
+  const random = levelRandom(night * 9301 + 49297);
+  const cells = [];
+  const rows = new Set();
+  let guard = 0;
+  while (cells.length < count && guard < 200) {
+    guard += 1;
+    const col = 1 + Math.floor(random() * (NW_COLS - 1));
+    const row = Math.floor(random() * NW_LANES);
+    if (rows.has(row)) continue;
+    if (cells.some((cell) => cell.col === col && cell.row === row)) continue;
+    rows.add(row);
+    cells.push({ col, row });
+  }
+  return cells;
+}
+
 // 每天（本地时间）一条，按日序号散列；同一天刷新页面不会变。
 export function dailyModifier(date = new Date()) {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
@@ -553,6 +585,8 @@ export function createNightWatch({
     ...(modifier || {})
   };
   const nightLevel = Math.max(1, Math.floor(level));
+  const blocked = blockedCellsFor(nightLevel);
+  const blockedKeys = new Set(blocked.map((cell) => `${cell.col},${cell.row}`));
   const deepDef = nightLevel >= 16 ? deepFog || deepFogFor(nightLevel) : null;
   const deep = {
     hp: 1,
@@ -583,6 +617,7 @@ export function createNightWatch({
   let baseHp = baseMax;
   let wave = 0;
   let waveQueue = [];
+  let waves = Array.from({ length: waveTotal }, (_, index) => buildWave(index));
   let spawnIndex = 0;
   let waveClock = 0;
   let breakClock = 0;
@@ -623,7 +658,7 @@ export function createNightWatch({
 
   function beginWave(index) {
     wave = index;
-    waveQueue = buildWave(index);
+    waveQueue = waves[index] || [];
     spawnIndex = 0;
     waveClock = 0;
     phase = "running";
@@ -631,6 +666,9 @@ export function createNightWatch({
 
   function start() {
     if (phase !== "ready") return false;
+    if (!waves.length) {
+      waves = Array.from({ length: waveTotal }, (_, index) => buildWave(index));
+    }
     beginWave(0);
     return true;
   }
@@ -684,6 +722,7 @@ export function createNightWatch({
       row,
       hp: Math.round(def.hp * bonus.hp * mod.towerHp * deep.towerHp),
       maxHp: Math.round(def.hp * bonus.hp * mod.towerHp * deep.towerHp),
+      invested: def.cost,
       cool: 0.2,
       oilTimer: def.interval || 0,
       burstTimer: def.interval || 0,
@@ -966,6 +1005,17 @@ export function createNightWatch({
     }
   }
 
+  function sell(col, row) {
+    if (phase === "won" || phase === "lost") return { ok: false, code: "over" };
+    const tower = towerAt(col, row);
+    if (!tower) return { ok: false, code: "empty" };
+    const def = UNITS[tower.type];
+    const refund = Math.floor((tower.invested || 0) * 0.5);
+    towers = towers.filter((item) => item !== tower);
+    oil = Math.min(999, oil + refund);
+    return { ok: true, refund, name: def.name };
+  }
+
   function select(type) {
     if (!TOWERS[type]) {
       selected = "";
@@ -992,6 +1042,9 @@ export function createNightWatch({
     ) {
       return { ok: false, code: "outside" };
     }
+    if (blockedKeys.has(`${col},${row}`)) {
+      return { ok: false, code: "blocked" };
+    }
     const existing = towerAt(col, row);
     if (existing && existing.tier >= 2) {
       return { ok: false, code: "already-fused" };
@@ -1010,6 +1063,7 @@ export function createNightWatch({
       existing.maxHp = Math.round(recipe.hp * bonus.hp * mod.towerHp * deep.towerHp);
       existing.hp = Math.round(recipe.hp * bonus.hp * mod.towerHp * deep.towerHp);
       existing.cool = 0.3;
+      existing.invested = (existing.invested || def.cost) + fusionCost;
       existing.oilTimer = recipe.interval || 0;
       existing.burstTimer = recipe.interval || 0;
       return { ok: true, fused: true, id: recipe.id, name: recipe.name, cost: fusionCost };
@@ -1027,6 +1081,7 @@ export function createNightWatch({
     const list = [];
     for (let row = 0; row < NW_LANES; row += 1) {
       for (let col = 0; col < NW_COLS; col += 1) {
+        if (blockedKeys.has(`${col},${row}`)) continue;
         const existing = towerAt(col, row);
         if (!existing) {
           list.push({ col, row, kind: "place" });
@@ -1040,6 +1095,21 @@ export function createNightWatch({
       }
     }
     return list;
+  }
+
+  function wavePreview(index) {
+    const queue = waves[index] || [];
+    const counts = new Map();
+    for (const entry of queue) {
+      counts.set(entry.type, (counts.get(entry.type) || 0) + 1);
+    }
+    return [...counts.entries()].map(([type, count]) => ({
+      type,
+      count,
+      name: ENEMIES[type].name,
+      icon: ENEMIES[type].icon,
+      boss: Boolean(ENEMIES[type].boss)
+    }));
   }
 
   function snapshot() {
@@ -1094,6 +1164,19 @@ export function createNightWatch({
       baseMax,
       kills,
       selected,
+      blocked,
+      nextWave: (() => {
+        if (!waves.length) {
+          return { number: 1, label: "第一波", enemies: [] };
+        }
+        const index =
+          phase === "break" ? Math.min(wave + 1, waveTotal - 1) : phase === "ready" ? 0 : wave;
+        return {
+          number: index + 1,
+          label: phase === "break" ? "下一波" : phase === "ready" ? "第一波" : "本波",
+          enemies: wavePreview(index)
+        };
+      })(),
       cards: NW_TOWER_LIST.map((tower) => ({
         id: tower.id,
         name: tower.name,
@@ -1175,6 +1258,7 @@ export function createNightWatch({
     tick,
     select,
     place,
+    sell,
     spots,
     snapshot,
     setSpeed,

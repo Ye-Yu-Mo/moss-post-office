@@ -5146,7 +5146,8 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
       "no-select": "先在下面选一张卡。",
       over: "这一夜已经结束了。",
       locked: "这一种还没解锁。",
-      outside: "这里种不下。"
+      outside: "这里种不下。",
+      blocked: "这里是雾障，种不下去。"
     };
     playDenySound();
     showToast(messages[result.code] || "这里种不下。", 2200);
@@ -5162,6 +5163,16 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
       onCard: (id) => {
         if (!nightEngine) return;
         nightEngine.select(id);
+        pushNightSnapshot();
+      },
+      onSell: (col, row) => {
+        if (!nightEngine) return;
+        const result = nightEngine.sell(Number(col), Number(row));
+        if (result.ok) {
+          showToast(`铲掉了${result.name}，退回 ${result.refund} 灯油。`, 2200);
+        } else {
+          showToast("这一格没有植物。", 1800);
+        }
         pushNightSnapshot();
       },
       onCell: (col, row) => {
