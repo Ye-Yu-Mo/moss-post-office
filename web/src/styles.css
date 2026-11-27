@@ -5760,6 +5760,16 @@ h3 {
   border-bottom: 0;
 }
 
+.nw-fog {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 14%;
+  background: linear-gradient(90deg, rgba(14, 22, 17, 0), rgba(14, 22, 17, 0.6));
+  pointer-events: none;
+}
+
 .nw-grid {
   position: absolute;
   inset: 0;

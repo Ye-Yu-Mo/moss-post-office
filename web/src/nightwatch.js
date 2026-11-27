@@ -259,7 +259,7 @@ export function createNightWatch({
       id: nextId++,
       type,
       row,
-      x: NW_COLS - 0.35,
+      x: NW_COLS - 0.8,
       hp,
       maxHp: hp,
       attack: 0.5,

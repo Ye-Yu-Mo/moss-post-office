@@ -20,6 +20,8 @@
         <span v-for="row in laneList" :key="row" class="nw-lane"></span>
       </div>
 
+      <span class="nw-fog" aria-hidden="true"></span>
+
       <div class="nw-grid">
         <button
           v-for="cell in cells"
