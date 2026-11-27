@@ -32,6 +32,22 @@ import {
   unmountPostcardComposer
 } from "./ui/mountPostcardComposer.js";
 import { setPostcardComposerSnapshot } from "./ui/postcardComposerStore.js";
+import {
+  createNightWatch,
+  NW_TOWER_LIST,
+  NW_RECIPE_LIST,
+  NW_LANES,
+  NW_COLS,
+  nightStartOil,
+  nightHpScale
+} from "./nightwatch.js";
+import { mountNightWatch, unmountNightWatch } from "./ui/mountNightWatch.js";
+import { setNightWatchSnapshot } from "./ui/nightWatchStore.js";
+import {
+  mountNightWatchPanel,
+  unmountNightWatchPanel
+} from "./ui/mountNightWatchPanel.js";
+import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
 
 (() => {
   "use strict";
@@ -1228,7 +1244,7 @@ import { setPostcardComposerSnapshot } from "./ui/postcardComposerStore.js";
 
   function createInitialState(sound = true) {
     return {
-      version: 10,
+      version: 11,
       stamps: 0,
       runEarned: 0,
       totalEarned: 0,
@@ -1257,6 +1273,7 @@ import { setPostcardComposerSnapshot } from "./ui/postcardComposerStore.js";
       postcardSetRewards: [],
       postcardAlbumReward: false,
       collectibles: [],
+      nightWatch: { night: 1, best: 0, wins: 0, kills: 0 },
       gens: Object.fromEntries(GENERATORS.map((gen) => [gen.id, 0])),
       boughtTotal: Object.fromEntries(GENERATORS.map((gen) => [gen.id, 0])),
       upgrades: [],
@@ -1366,6 +1383,13 @@ import { setPostcardComposerSnapshot } from "./ui/postcardComposerStore.js";
           .slice(-80)
       : [];
     clean.expedition = normalizeExpedition(raw.expedition);
+    if (raw.nightWatch && typeof raw.nightWatch === "object") {
+      clean.nightWatch.night = Math.max(1, Math.floor(numberOr(raw.nightWatch.night, 1)));
+      clean.nightWatch.best = Math.max(0, Math.floor(numberOr(raw.nightWatch.best)));
+      clean.nightWatch.wins = Math.max(0, Math.floor(numberOr(raw.nightWatch.wins)));
+      clean.nightWatch.kills = Math.max(0, Math.floor(numberOr(raw.nightWatch.kills)));
+      clean.nightWatch.best = Math.min(clean.nightWatch.best, clean.nightWatch.night - 1);
+    }
     clean.bellActiveUntil = numberOr(raw.bellActiveUntil);
     clean.bellReadyAt = numberOr(raw.bellReadyAt);
     clean.weatherUntil = numberOr(raw.weatherUntil);
@@ -2164,6 +2188,7 @@ import { setPostcardComposerSnapshot } from "./ui/postcardComposerStore.js";
     dispatch: "让信去更远的地方",
     upgrades: "把邮戳磨得亮一点",
     album: "把日子贴成邮票",
+    night: "把雾里的影子挡在门外",
     moon: "开往月亮的夜班车"
   };
 
@@ -2173,10 +2198,11 @@ import { setPostcardComposerSnapshot } from "./ui/postcardComposerStore.js";
     dispatch: "苔藓镇 · 邮路柜台",
     upgrades: "苔藓镇 · 邮戳工坊",
     album: "苔藓镇 · 集邮册",
+    night: "苔藓镇 · 守夜防线",
     moon: "苔藓镇 · 月亮夜班"
   };
 
-  const TAB_NAMES = ["posties", "orders", "dispatch", "upgrades", "album", "moon"];
+  const TAB_NAMES = ["posties", "orders", "dispatch", "upgrades", "album", "night", "moon"];
 
   function buildShopPanel() {
     shopUi.clear();
@@ -4487,6 +4513,186 @@ import { setPostcardComposerSnapshot } from "./ui/postcardComposerStore.js";
     };
   }
 
+  let nightEngine = null;
+  let nightTimer = 0;
+  let nightSpeed = 1;
+  let nightLevel = 1;
+
+  function nightPanelSnapshot() {
+    const progress = state.nightWatch;
+    const night = Math.max(1, progress.night);
+    const towers = NW_TOWER_LIST.map((tower) => ({
+      ...tower,
+      unlocked: tower.unlockNight <= night
+    }));
+    const recipes = NW_RECIPE_LIST.map((recipe) => ({
+      ...recipe,
+      unlocked: recipe.unlockNight <= night,
+      aName: NW_TOWER_LIST.find((tower) => tower.id === recipe.a)?.name || recipe.a,
+      bName: NW_TOWER_LIST.find((tower) => tower.id === recipe.b)?.name || recipe.b
+    }));
+    const unlocks = [
+      ...towers
+        .filter((tower) => tower.unlockNight > night)
+        .map((tower) => ({ at: tower.unlockNight, text: `第 ${tower.unlockNight} 夜解锁「${tower.name}」` })),
+      ...recipes
+        .filter((recipe) => recipe.unlockNight > night)
+        .map((recipe) => ({ at: recipe.unlockNight, text: `第 ${recipe.unlockNight} 夜解锁融合「${recipe.name}」` }))
+    ].sort((a, b) => a.at - b.at);
+    const nextText = unlocks.length
+      ? `接下来：${unlocks.slice(0, 2).map((unlock) => unlock.text).join("；")}。`
+      : "守夜植物和配方都解锁了，雾只会越来越深。";
+    return {
+      night,
+      best: progress.best,
+      wins: progress.wins,
+      kills: progress.kills,
+      towers,
+      recipes,
+      towerCount: towers.filter((tower) => tower.unlocked).length,
+      recipeCount: recipes.filter((recipe) => recipe.unlocked).length,
+      nextText
+    };
+  }
+
+  function buildNightPanel() {
+    unmountNightWatchPanel();
+    els.panelBody.innerHTML = `<div data-night-panel-root></div>`;
+    const root = els.panelBody.querySelector("[data-night-panel-root]");
+    if (!root) return;
+    mountNightWatchPanel(root, {
+      handlers: { onOpen: openNightWatch },
+      icons: ICONS
+    });
+    setNightPanelSnapshot(nightPanelSnapshot());
+  }
+
+  function pushNightSnapshot() {
+    if (nightEngine) setNightWatchSnapshot(nightEngine.snapshot());
+  }
+
+  function stopNightClock() {
+    if (nightTimer) window.clearInterval(nightTimer);
+    nightTimer = 0;
+  }
+
+  function startNightEngine(level) {
+    stopNightClock();
+    nightLevel = Math.max(1, Math.floor(level));
+    nightSpeed = 1;
+    nightEngine = createNightWatch({
+      level: nightLevel,
+      onFinish: handleNightFinish
+    });
+    pushNightSnapshot();
+    nightTimer = window.setInterval(() => {
+      if (!nightEngine || document.hidden || els.modal.hidden) return;
+      nightEngine.tick(0.07);
+      pushNightSnapshot();
+    }, 70);
+  }
+
+  function handleNightFinish(result) {
+    stopNightClock();
+    if (!result.won) {
+      showToast(`第 ${result.level} 夜没守住，门板被撞开了。`, 3600);
+      return;
+    }
+    const rewards = result.rewards;
+    addStamps(rewards.stamps);
+    addInk(rewards.ink);
+    state.materials.paper = Math.min(
+      99,
+      (state.materials.paper || 0) + rewards.paper
+    );
+    if (rewards.wax) {
+      state.materials.wax = Math.min(99, (state.materials.wax || 0) + rewards.wax);
+    }
+    const progress = state.nightWatch;
+    progress.night = Math.max(progress.night, result.level + 1);
+    progress.best = Math.max(progress.best, result.level);
+    progress.wins += 1;
+    progress.kills += result.kills;
+    saveGame();
+    refreshLive();
+    showToast(
+      `第 ${result.level} 夜守住了，带回 ${formatNumber(rewards.stamps)} 张邮票。`,
+      4400
+    );
+  }
+
+  function nightToastForPlace(result) {
+    if (result.ok) {
+      if (result.fused) showToast(`融合成了${result.name}。`, 2200);
+      return;
+    }
+    const messages = {
+      poor: "灯油不够，再等邮票花结一点。",
+      occupied: "这一格已经有植物了，换一株能融合的试试。",
+      "already-fused": "这株已经融合过了。",
+      "no-select": "先在下面选一张卡。",
+      over: "这一夜已经结束了。",
+      locked: "这一种还没解锁。",
+      outside: "这里种不下。"
+    };
+    playDenySound();
+    showToast(messages[result.code] || "这里种不下。", 2200);
+  }
+
+  function nightHandlers() {
+    return {
+      onStart: () => {
+        if (!nightEngine) return;
+        nightEngine.start();
+        pushNightSnapshot();
+      },
+      onCard: (id) => {
+        if (!nightEngine) return;
+        nightEngine.select(id);
+        pushNightSnapshot();
+      },
+      onCell: (col, row) => {
+        if (!nightEngine) return;
+        const result = nightEngine.place(Number(col), Number(row));
+        nightToastForPlace(result);
+        pushNightSnapshot();
+      },
+      onPause: () => {
+        if (!nightEngine) return;
+        nightEngine.togglePause();
+        pushNightSnapshot();
+      },
+      onSpeed: () => {
+        if (!nightEngine) return;
+        nightSpeed = nightSpeed === 1 ? 2 : 1;
+        nightEngine.setSpeed(nightSpeed);
+        pushNightSnapshot();
+      },
+      onRetry: () => startNightEngine(nightLevel),
+      onNext: () => startNightEngine(nightLevel + 1),
+      onClose: () => closeModal()
+    };
+  }
+
+  function openNightWatch() {
+    if (!state) return;
+    openModal({
+      title: "守夜防线",
+      body: `<div data-night-watch-root></div>`,
+      footer: false,
+      wide: true,
+      kicker: "苔藓邮局 · 守夜"
+    });
+    const root = els.modalBody.querySelector("[data-night-watch-root]");
+    if (!root) return;
+    mountNightWatch(root, {
+      handlers: nightHandlers(),
+      icons: ICONS,
+      formatNumber
+    });
+    startNightEngine(Math.max(1, state.nightWatch.night));
+  }
+
   function buildMoonPanel() {
     moonBuilt = true;
     unmountMoon();
@@ -4537,6 +4743,7 @@ import { setPostcardComposerSnapshot } from "./ui/postcardComposerStore.js";
     if (name !== "album") unmountAlbum();
     if (name !== "moon") unmountMoon();
     if (name !== "upgrades") unmountWorkshop();
+    if (name !== "night") unmountNightWatchPanel();
 
     if (name === "posties") {
       buildShopPanel();
@@ -4556,6 +4763,8 @@ import { setPostcardComposerSnapshot } from "./ui/postcardComposerStore.js";
       buildAlbumPanel();
       unseenAchievements = 0;
       updateTabBadges();
+    } else if (name === "night") {
+      buildNightPanel();
     } else {
       buildMoonPanel();
       refreshMoonUi();
@@ -5385,6 +5594,9 @@ import { setPostcardComposerSnapshot } from "./ui/postcardComposerStore.js";
     unmountEventModal();
     unmountFriendProfile();
     unmountPostcardComposer();
+    unmountNightWatch();
+    stopNightClock();
+    nightEngine = null;
     modalAction = typeof options.action === "function" ? options.action : null;
     modalReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     els.modalTitle.textContent = options.title;
@@ -5423,6 +5635,9 @@ import { setPostcardComposerSnapshot } from "./ui/postcardComposerStore.js";
     unmountEventModal();
     unmountFriendProfile();
     unmountPostcardComposer();
+    unmountNightWatch();
+    stopNightClock();
+    nightEngine = null;
     els.modal.hidden = true;
     document.body.style.overflow = "";
     modalAction = null;
@@ -7054,7 +7269,26 @@ import { setPostcardComposerSnapshot } from "./ui/postcardComposerStore.js";
         state: () => state,
         triggerEvent: () => { nextEventAt = 0; maybeTriggerEvent(); },
         triggerOrders: () => { ensureOffers(); buildOrdersPanel(); },
-        stamp: (quality) => handleStampClick(quality)
+        stamp: (quality) => handleStampClick(quality),
+        openNightWatch,
+        nightwatch: () => (nightEngine ? nightEngine.snapshot() : null),
+        nightwatchOil: (amount) => { if (nightEngine) nightEngine.addOil(amount); },
+        nightwatchSpawn: (type, row) => { if (nightEngine) nightEngine.spawn(type, row); },
+        nightwatchSelect: (type) => {
+          if (!nightEngine) return null;
+          nightEngine.select(type);
+          pushNightSnapshot();
+          return nightEngine.snapshot().selected;
+        },
+        nightwatchPlace: (type, col, row) => {
+          if (!nightEngine) return null;
+          if (nightEngine.snapshot().selected !== type) nightEngine.select(type);
+          const placed = nightEngine.place(Number(col), Number(row));
+          pushNightSnapshot();
+          return placed;
+        },
+        nightwatchWin: () => { if (nightEngine) { nightEngine.forceWin(); pushNightSnapshot(); } },
+        nightwatchLose: () => { if (nightEngine) { nightEngine.forceLose(); pushNightSnapshot(); } }
       };
     }
     requestAnimationFrame(gameLoop);

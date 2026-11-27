@@ -86,14 +86,25 @@
 
 ## 7. 前端迁移状态（Vue 3）
 
-- 2026-11-27：接入 Vue 3 + `@vitejs/plugin-vue`；`TownView.vue` 接管镇口（好友 / 收件箱 / 广场），`GardenPanel.vue` 嵌套其中，`AccountView.vue` 接管账号弹窗，`OrdersView.vue` 接管订单面板，`AlbumView.vue` 接管邮册面板，`MoonView.vue` 接管月亮面板，`WorkshopView.vue` 接管工坊面板，`ExpeditionView.vue` 接管远行界面（路线/手牌/营地/结算），`SeedModal.vue` 接管选种，`FriendGardenView.vue` 接管好友/NPC 后院（偷菜/帮浇水），`ExpeditionPrepView.vue` 接管行前准备，`InfoModal.vue` 接管帮助/重开/转生/契约/丢单等确认弹窗，`EventModalView.vue` 接管随机事件，`FriendProfileView.vue` 接管串门档案，`PostcardComposerView.vue` 接管明信片书写；状态机仍在纯 JS。
+- 2026-11-27：接入 Vue 3 + `@vitejs/plugin-vue`；`TownView.vue` 接管镇口（好友 / 收件箱 / 广场），`GardenPanel.vue` 嵌套其中，`AccountView.vue` 接管账号弹窗，`OrdersView.vue` 接管订单面板，`AlbumView.vue` 接管邮册面板，`MoonView.vue` 接管月亮面板，`WorkshopView.vue` 接管工坊面板，`ExpeditionView.vue` 接管远行界面（路线/手牌/营地/结算），`SeedModal.vue` 接管选种，`FriendGardenView.vue` 接管好友/NPC 后院（偷菜/帮浇水），`ExpeditionPrepView.vue` 接管行前准备，`InfoModal.vue` 接管帮助/重开/转生/契约/丢单等确认弹窗，`EventModalView.vue` 接管随机事件，`FriendProfileView.vue` 接管串门档案，`PostcardComposerView.vue` 接管明信片书写，`NightWatchPanel.vue` / `NightWatchView.vue` 接管守夜面板与塔防棋盘（引擎在 `nightwatch.js`）；状态机仍在纯 JS。
 - 挂载方式：`mountTown.js` / `mountAccount.js` / `mountSeedModal.js` 等在弹窗 DOM 里创建/卸载 Vue app；props 是快照，事件通过回调回传旧逻辑；点击用 `.stop` 避免和旧事件委托重复触发。
 - 游戏循环、存档、远征状态机仍然在 Vue 外；Vue 只读 UI 数据，不参与逐帧 tick。
 - 迁移顺序：镇口（已完成）→ 账号（已完成）→ 订单（已完成）→ 邮册（已完成）→ 月亮（已完成）→ 工坊（已完成）→ 远行（已完成）→ 选种 / 好友后院 / 行前准备（已完成）→ 帮助/重开/转生/契约/丢单/随机事件/串门/明信片（已完成）→ 盖戳台；盖戳台保留原生或最后做薄包装。
 - 当前 bundle 约 262 KB（gzip 93 KB），其中 Vue 运行时约 60 KB；迁移期间接受这个增量，完成后删除旧字符串模板会回落。
 - 禁止：把逐帧循环、计时器或游戏状态写进 Vue 响应式；每个面板只接收不可变快照和回调。
 
-## 7. 版本策略
+## 8. 守夜防线（塔防）
+
+- 入口是邮局小店的「守夜」页签；面板显示当前夜、最远记录、植物和融合配方，点「开始守夜」打开宽弹窗。
+- 引擎在 `web/src/nightwatch.js`：纯 JS、无 DOM、无全局状态，导出 `createNightWatch({ level, rng, onFinish })`。棋盘 5 条邮路 × 8 格，敌人从右往左走，摸到门板扣血；灯油是场内货币。
+- 节奏由 `main.js` 的控制器驱动：弹窗打开时每 70ms 调一次 `tick(0.07)` 并把快照推给 Vue；关闭弹窗、切到后台或暂停时停止。Vue 只渲染快照和回传点击，不参与逐帧逻辑。
+- 植物 6 种（信封草 / 邮票花 / 彩纸藤 / 墨莓 / 星屑花 / 月光菇），按夜解锁；融合配方 5 种（连发草 / 邮筒炮台 / 金邮票 / 墨光花 / 月藤），在同一格再种一株时判定。
+- 波次与强度按夜增长：夜 HP 倍率 `1 + 0.2·(n-1) + 0.006·(n-1)²`，起始灯油随夜增加，波数封顶 6 波，每 5 夜最后一波加一辆夜班车 Boss。
+- 进度只存客户端：`state.nightWatch = { night, best, wins, kills }`，跟存档一起同步；胜利奖励直接加邮票 / 墨点 / 纸 / 蜡。和服务端一样，塔防不是权威模拟，改存档仍可作弊。
+- 平衡用无头模拟调（直接 import 引擎跑机器人），目标是前 6 夜稳定可过、7–10 夜需要融合和走位。
+- `#qa` 下暴露 `__moss.nightwatch*`（快照、加灯油、指定行刷怪、强制胜负、直接放置），供 Playwright 测。
+
+## 9. 版本策略
 
 | 层 | 策略 |
 | --- | --- |
