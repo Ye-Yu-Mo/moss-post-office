@@ -28,6 +28,12 @@ pub enum ApiError {
 
 impl From<sqlx::Error> for ApiError {
     fn from(error: sqlx::Error) -> Self {
+        if let sqlx::Error::Database(database) = &error {
+            // PostgreSQL rejects NUL bytes in TEXT with SQLSTATE 22021.
+            if database.code().as_deref() == Some("22021") {
+                return ApiError::BadRequest("invalid input encoding");
+            }
+        }
         ApiError::Internal(error.to_string())
     }
 }

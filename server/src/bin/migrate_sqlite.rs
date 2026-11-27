@@ -1,7 +1,6 @@
 use std::path::Path;
 
 use rusqlite::Connection;
-use sqlx::PgPool;
 
 fn env(name: &str, default: &str) -> String {
     std::env::var(name).unwrap_or_else(|_| default.to_string())
@@ -17,9 +16,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sqlite = Connection::open(&sqlite_path)?;
     let db = moss_sync::db::Db::connect(&database_url).await?;
     let pool = db.pool();
-    reset(pool).await?;
-    let counts = copy_all(&sqlite, pool).await?;
-    reset_sequences(pool).await?;
+    let mut tx = pool.begin().await?;
+    reset(&mut tx).await?;
+    let counts = copy_all(&sqlite, &mut tx).await?;
+    reset_sequences(&mut tx).await?;
+    tx.commit().await?;
     for (table, count) in counts {
         println!("{table}: {count}");
     }
@@ -27,7 +28,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn reset(pool: &PgPool) -> Result<(), sqlx::Error> {
+async fn reset(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>) -> Result<(), sqlx::Error> {
     sqlx::query(
         "TRUNCATE TABLE postcard_sends, postcards, garden_quests, garden_actions,
          garden_crop_stats, garden_helps, garden_steals, garden_plots,
@@ -35,12 +36,12 @@ async fn reset(pool: &PgPool) -> Result<(), sqlx::Error> {
          events, saves, login_challenges, sessions, bots, users
          RESTART IDENTITY CASCADE",
     )
-    .execute(pool)
+    .execute(&mut **tx)
     .await?;
     Ok(())
 }
 
-async fn reset_sequences(pool: &PgPool) -> Result<(), sqlx::Error> {
+async fn reset_sequences(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>) -> Result<(), sqlx::Error> {
     for table in [
         "events",
         "friend_requests",
@@ -54,7 +55,7 @@ async fn reset_sequences(pool: &PgPool) -> Result<(), sqlx::Error> {
                            COALESCE((SELECT MAX(id) FROM {table}), 1),
                            (SELECT MAX(id) FROM {table}) IS NOT NULL)"
         );
-        sqlx::query(&sql).execute(pool).await?;
+        sqlx::query(&sql).execute(&mut **tx).await?;
     }
     Ok(())
 }
@@ -66,9 +67,8 @@ fn count(conn: &Connection, table: &str) -> i64 {
 
 async fn copy_all(
     sqlite: &Connection,
-    pool: &PgPool,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
 ) -> Result<Vec<(&'static str, i64)>, Box<dyn std::error::Error>> {
-    let mut tx = pool.begin().await?;
     let mut counts = Vec::new();
 
     {
@@ -116,7 +116,7 @@ async fn copy_all(
             .bind(last_active)
             .bind(friend_code)
             .bind(garden_harvests)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await?;
         }
         counts.push(("users", count(sqlite, "users")));
@@ -145,7 +145,7 @@ async fn copy_all(
             .bind(created_at)
             .bind(expires_at)
             .bind(last_seen)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await?;
         }
         counts.push(("sessions", count(sqlite, "sessions")));
@@ -170,7 +170,7 @@ async fn copy_all(
             .bind(nonce)
             .bind(created_at)
             .bind(expires_at)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await?;
         }
         counts.push(("login_challenges", count(sqlite, "login_challenges")));
@@ -200,7 +200,7 @@ async fn copy_all(
             .bind(payload)
             .bind(client_ts)
             .bind(updated_at)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await?;
         }
         counts.push(("saves", count(sqlite, "saves")));
@@ -232,7 +232,7 @@ async fn copy_all(
             .bind(payload)
             .bind(client_ts)
             .bind(created_at)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await?;
         }
         counts.push(("events", count(sqlite, "events")));
@@ -259,7 +259,7 @@ async fn copy_all(
             .bind(from_id)
             .bind(to_id)
             .bind(created_at)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await?;
         }
         counts.push(("friend_requests", count(sqlite, "friend_requests")));
@@ -284,7 +284,7 @@ async fn copy_all(
             .bind(user_id)
             .bind(friend_id)
             .bind(created_at)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await?;
         }
         counts.push(("friendships", count(sqlite, "friendships")));
@@ -311,7 +311,7 @@ async fn copy_all(
             .bind(friend_id)
             .bind(day)
             .bind(created_at)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await?;
         }
         counts.push(("friend_visits", count(sqlite, "friend_visits")));
@@ -349,7 +349,7 @@ async fn copy_all(
             .bind(serial)
             .bind(image_key)
             .bind(minted_at)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await?;
         }
         counts.push(("collectibles", count(sqlite, "collectibles")));
@@ -385,7 +385,7 @@ async fn copy_all(
             .bind(ripe_at)
             .bind(stolen)
             .bind(watered)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await?;
         }
         counts.push(("garden_plots", count(sqlite, "garden_plots")));
@@ -415,7 +415,7 @@ async fn copy_all(
             .bind(plot)
             .bind(day)
             .bind(created_at)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await?;
         }
         counts.push(("garden_steals", count(sqlite, "garden_steals")));
@@ -445,7 +445,7 @@ async fn copy_all(
             .bind(plot)
             .bind(day)
             .bind(created_at)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await?;
         }
         counts.push(("garden_helps", count(sqlite, "garden_helps")));
@@ -473,7 +473,7 @@ async fn copy_all(
             .bind(crop)
             .bind(harvests)
             .bind(stolen)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await?;
         }
         counts.push(("garden_crop_stats", count(sqlite, "garden_crop_stats")));
@@ -508,7 +508,7 @@ async fn copy_all(
             .bind(action)
             .bind(crop)
             .bind(created_at)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await?;
         }
         counts.push(("garden_actions", count(sqlite, "garden_actions")));
@@ -542,7 +542,7 @@ async fn copy_all(
             .bind(reward_kind)
             .bind(reward_amount)
             .bind(claimed_at)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await?;
         }
         counts.push(("garden_quests", count(sqlite, "garden_quests")));
@@ -582,7 +582,7 @@ async fn copy_all(
             .bind(base_wins)
             .bind(daily_wins)
             .bind(created_at)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await?;
         }
         counts.push(("bots", count(sqlite, "bots")));
@@ -629,7 +629,7 @@ async fn copy_all(
             .bind(created_at)
             .bind(arrives_at)
             .bind(claimed_at)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await?;
         }
         counts.push(("postcards", count(sqlite, "postcards")));
@@ -657,12 +657,11 @@ async fn copy_all(
             .bind(user_id)
             .bind(recipient_kind)
             .bind(created_at)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await?;
         }
         counts.push(("postcard_sends", count(sqlite, "postcard_sends")));
     }
 
-    tx.commit().await?;
     Ok(counts)
 }

@@ -113,7 +113,12 @@ pub async fn square(
             kind: "bot",
         });
     }
-    players.sort_by(|left, right| right.total_stamps.cmp(&left.total_stamps));
+    players.sort_by(|left, right| {
+        right
+            .total_stamps
+            .cmp(&left.total_stamps)
+            .then(right.last_active.cmp(&left.last_active))
+    });
     Ok(Json(SquareResponse { players }))
 }
 

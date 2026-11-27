@@ -117,7 +117,15 @@ class GameHandler(BaseHTTPRequestHandler):
     def _proxy(self, head_only=False):
         path = urlsplit(self.path).path
         target = path[len("/api"):] or "/"
-        length = int(self.headers.get("Content-Length") or 0)
+        raw_length = self.headers.get("Content-Length")
+        try:
+            length = int(raw_length or 0)
+        except (TypeError, ValueError):
+            self.send_error(400, "Bad Content-Length")
+            return
+        if length < 0:
+            self.send_error(400, "Bad Content-Length")
+            return
         if length > MAX_PROXY_BODY:
             self.send_error(413, "Payload too large")
             return

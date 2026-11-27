@@ -55,11 +55,11 @@ impl Db {
             .bind(user_id)
             .fetch_optional(self.pool())
             .await?;
-        Ok(row.map(|row| row.get(0)))
+        Ok(row.and_then(|row| row.get::<Option<String>, _>(0)))
     }
 
     pub async fn user_id_by_friend_code(&self, code: String) -> Result<Option<String>, ApiError> {
-        let row = sqlx::query("SELECT id FROM users WHERE friend_code = $1")
+        let row = sqlx::query("SELECT id FROM users WHERE upper(friend_code) = $1")
             .bind(code.to_ascii_uppercase())
             .fetch_optional(self.pool())
             .await?;

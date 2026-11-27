@@ -22,6 +22,7 @@ import getpass
 import hashlib
 import subprocess
 import sys
+import unicodedata
 
 PEPPER = "moss-post-office:auth:v3:"
 ITERATIONS = 100_000
@@ -76,7 +77,7 @@ def main() -> int:
         return 1
 
     username = args.username.strip()
-    username_key = username.lower()
+    username_key = unicodedata.normalize("NFKC", username).strip().lower()
     verifier = derive_verifier(username, password)
 
     if args.docker_container:

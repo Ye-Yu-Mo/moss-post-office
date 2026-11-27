@@ -159,11 +159,14 @@ pub async fn login(
     }
 
     let username_key = auth::normalize_username(&request.username);
-    let user = state
-        .db
-        .user_by_username(username_key)
-        .await?
-        .ok_or(ApiError::InvalidCredentials)?;
+    let mut user = state.db.user_by_username(username_key.clone()).await?;
+    if user.is_none() {
+        let legacy_key = auth::legacy_username_key(&request.username);
+        if legacy_key != username_key {
+            user = state.db.user_by_username(legacy_key).await?;
+        }
+    }
+    let user = user.ok_or(ApiError::InvalidCredentials)?;
     if !auth::verify_proof(&user.verifier, nonce, proof) {
         return Err(ApiError::InvalidCredentials);
     }
@@ -247,18 +250,24 @@ fn bearer_token(headers: &HeaderMap) -> Result<&str, ApiError> {
 }
 
 fn validate_username(raw: &str) -> Result<(String, String), ApiError> {
-    let username = raw.trim();
+    use unicode_normalization::UnicodeNormalization;
+    let username = raw.trim().nfkc().collect::<String>();
+    let username = username.trim();
     let count = username.chars().count();
     if !(3..=24).contains(&count) {
         return Err(ApiError::BadRequest("username must be 3-24 characters"));
     }
-    if username
-        .chars()
-        .any(|ch| ch.is_control() || ch.is_whitespace() || ch == '/')
-    {
+    if username.chars().any(|ch| {
+        ch.is_control()
+            || ch.is_whitespace()
+            || ch == '/'
+            || auth::is_unsafe_format_char(ch)
+    }) {
         return Err(ApiError::BadRequest(
             "username contains an unsupported character",
         ));
     }
-    Ok((username.to_string(), auth::normalize_username(username)))
+    let username = username.to_string();
+    let key = auth::normalize_username(&username);
+    Ok((username, key))
 }

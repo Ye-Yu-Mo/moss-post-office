@@ -42,7 +42,32 @@ pub fn constant_time_eq(left: &str, right: &str) -> bool {
 }
 
 pub fn normalize_username(username: &str) -> String {
+    use unicode_normalization::UnicodeNormalization;
+    username
+        .trim()
+        .nfkc()
+        .collect::<String>()
+        .trim()
+        .to_lowercase()
+        .replace('\u{03C2}', "\u{03C3}")
+}
+
+/// Pre-NFKC key used by accounts created before the normalization change.
+pub fn legacy_username_key(username: &str) -> String {
     username.trim().to_lowercase()
+}
+
+pub fn is_unsafe_format_char(ch: char) -> bool {
+    matches!(
+        ch as u32,
+        0x00AD
+            | 0x061C
+            | 0x180E
+            | 0x200B..=0x200F
+            | 0x202A..=0x202E
+            | 0x2060..=0x2069
+            | 0xFEFF
+    )
 }
 
 pub fn is_hex_64(value: &str) -> bool {

@@ -68,7 +68,9 @@ cargo run
 3. 登录先取一次性 `nonce`（120 秒有效、单次使用），浏览器发送 `HMAC-SHA256(verifier, nonce)` 作为 `proof`。
 4. 服务端用保存的 `verifier` 重算并做常量时间比较；成功后发 30 天会话 token。
 
-- 用户名 3–24 字符，大小写不敏感唯一。
+- 用户名 3–24 字符，注册前做 NFKC 归一化并拒绝控制/零宽/双向格式字符；大小写不敏感唯一。
+- 好友码大小写不敏感唯一与查找（`upper(friend_code)` 唯一索引）；存量小写码也能被找到。
+- PostgreSQL 拒收的 NUL 等非法编码统一映射为 400，不返回 500。
 - 会话 token 32 字节随机数，服务端只存 SHA-256；注销删除当前会话。
 - 除注册/挑战/登录/健康检查外，所有请求需要：
 
@@ -205,7 +207,7 @@ curl -sS -X POST http://127.0.0.1:17322/v1/events \
 
 - 表：`users`、`sessions`、`login_challenges`、`saves`、`events`、`bots`、`postcards`、`postcard_sends`、`friend_requests`、`friendships`、`friend_visits`、`collectibles`、`garden_plots`、`garden_steals`、`garden_helps`、`garden_crop_stats`、`garden_actions`、`garden_quests`；PostgreSQL 16。
 - 迁移在 `server/migrations/`，用 sqlx 在启动时执行并记录版本；SQLite 时代的历史版本由一次性导入工具处理。
-- 历史 SQLite 数据导入：`MOSS_SQLITE_PATH=/path/moss.db MOSS_DATABASE_URL=postgres://... cargo run --bin migrate_sqlite`。工具会清空目标库后按外键顺序导入，并重置自增序列。
+- 历史 SQLite 数据导入：`MOSS_SQLITE_PATH=/path/moss.db MOSS_DATABASE_URL=postgres://... cargo run --bin migrate_sqlite`。清空、导入、序列重置在**同一个事务**里；源库缺表或外键错误时目标库保持原数据。
 - `verifier` 是 256 位派生值；它等价于本站的登录密钥，数据库泄露仍会导致账号被冒用，请限制 DB 访问并备份加密。
 - 备份：`scripts/backup_postgres.sh` 每天 03:30（`moss-backup.timer`）用 `pg_dump -Fc` 备份到 `/home/jas/games/moss-backups`，保留最近 14 份；写入前用 `pg_restore --list` 校验，文件 600。
 - 监控：`scripts/monitor.sh` 每 5 分钟（`moss-monitor.timer`）检查 Postgres 容器/查询、moss-sync、静态服务、首页与 `/api/healthz`、磁盘；结果写 `/home/jas/games/moss-status/status.json` 和 `monitor.log`，失败时 unit 置为 failed。
