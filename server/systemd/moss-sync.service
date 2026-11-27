@@ -6,7 +6,7 @@ After=network.target
 Type=simple
 WorkingDirectory=/home/jas/games/moss-sync
 Environment=MOSS_BIND=127.0.0.1:17322
-Environment=MOSS_DB=/home/jas/games/moss-sync/data/moss.db
+EnvironmentFile=/home/jas/games/moss-sync/database.env
 Environment=RUST_LOG=moss_sync=info,tower_http=warn
 ExecStart=/home/jas/games/moss-sync/moss-sync
 Restart=on-failure

@@ -1,6 +1,3 @@
-use rusqlite::params;
-use rusqlite::TransactionBehavior;
-
 use crate::{db::Db, error::ApiError};
 
 pub struct NewEvent {
@@ -16,26 +13,21 @@ impl Db {
         events: Vec<NewEvent>,
         created_at: i64,
     ) -> Result<(), ApiError> {
-        self.call(move |conn| {
-            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-            {
-                let mut statement = tx.prepare(
-                    "INSERT INTO events (user_id, name, payload, client_ts, created_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5)",
-                )?;
-                for event in &events {
-                    statement.execute(params![
-                        user_id,
-                        event.name,
-                        event.payload,
-                        event.client_ts,
-                        created_at
-                    ])?;
-                }
-            }
-            tx.commit()?;
-            Ok(())
-        })
-        .await
+        let mut tx = self.pool().begin().await?;
+        for event in events {
+            sqlx::query(
+                "INSERT INTO events (user_id, name, payload, client_ts, created_at)
+                 VALUES ($1, $2, $3, $4, $5)",
+            )
+            .bind(&user_id)
+            .bind(event.name)
+            .bind(event.payload)
+            .bind(event.client_ts)
+            .bind(created_at)
+            .execute(&mut *tx)
+            .await?;
+        }
+        tx.commit().await?;
+        Ok(())
     }
 }

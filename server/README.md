@@ -2,7 +2,7 @@
 
 苔藓邮局的薄同步服务：注册登录、云存档、事件上报。它**不参与游戏模拟**，也不认识卡牌、关卡或经济系统。
 
-技术栈：Rust 2021 · axum 0.8 · rusqlite（bundled SQLite）· tokio · HMAC-SHA256。
+技术栈：Rust 2021 · axum 0.8 · sqlx + PostgreSQL 16 · tokio · HMAC-SHA256。
 
 ## 代码结构
 
@@ -24,8 +24,8 @@ src/
   auth/
     mod.rs         token、SHA-256、HMAC 校验、用户名归一化
   db/
-    mod.rs         Db 封装（每次请求一个连接，WAL）
-    schema.rs      建表、v1/v2 旧表迁移
+    mod.rs         Db 连接池 + 启动迁移 + NPC 种子
+  migrations/      PostgreSQL 迁移（编译期内嵌）
     users.rs       用户 + verifier
     sessions.rs    会话
     challenges.rs  一次性登录 nonce
@@ -42,9 +42,11 @@ src/
 ## 运行
 
 ```bash
-cargo test
+createdb moss_dev
+createdb moss_test
+MOSS_TEST_DATABASE_URL=postgres://localhost/moss_test cargo test
 MOSS_BIND=127.0.0.1:17322 \
-MOSS_DB=data/moss.db \
+MOSS_DATABASE_URL=postgres://localhost/moss_dev \
 RUST_LOG=moss_sync=info,tower_http=warn \
 cargo run
 ```
@@ -54,7 +56,7 @@ cargo run
 | 变量 | 默认 | 说明 |
 | --- | --- | --- |
 | `MOSS_BIND` | `127.0.0.1:17322` | 监听地址；对外请走反向代理 |
-| `MOSS_DB` | `data/moss.db` | SQLite 路径，自动建目录和表 |
+| `MOSS_DATABASE_URL` | `postgres://127.0.0.1:5432/moss` | PostgreSQL 连接串；生产用独立容器 |
 | `RUST_LOG` | `moss_sync=info,tower_http=warn` | 日志过滤 |
 
 ## 认证（HTTP 下的挑战应答）
@@ -194,35 +196,37 @@ curl -sS -X POST http://127.0.0.1:17322/v1/events \
 
 - `collectibles` 表记录 kind/template/edition/serial/image_key；每用户每模板只能有一枚。
 - `users.night_best` 由存档上传时的 `nightWatch.best` 更新，`/v1/square` 返回给镇口排行。
-- 明信片每日 5 张上限在 SQLite IMMEDIATE 事务里count+insert+记录，并发请求也不会超发。
+- 明信片每日 5 张上限在 PostgreSQL 事务 + 用户级 advisory lock 里 count+insert+记录，并发请求也不会超发。
 - 明信片单版 200 枚，套装徽章 50 枚；serial 由服务端单调分配，超发拒绝。
 - 守夜纪念戳：`POST /v1/nightwatch/claim { level }`，只接受 5 / 10 / 15 / 20 / 25 / 30；服务端要求 `users.night_best >= level`（由最近一次存档上传写入），否则 400；对应 `nightwatch` 模板 `night_5` / `night_10` / `night_15` / `deep_20` / `deep_25` / `deep_30`，edition 100 / 50 / 25 / 50 / 30 / 15，每用户每模板只能领一次，重复请求返回 `collectible: null`。
 - 目前美术使用现有 AI 图标作为占位；完整 AI 插画待图片接口配额恢复后替换。
 
 ## 数据与备份
 
-- 表：`users`、`sessions`、`login_challenges`、`saves`、`events`、`bots`、`postcards`、`postcard_sends`、`friend_requests`、`friendships`、`friend_visits`、`collectibles`、`garden_plots`、`garden_steals`；SQLite WAL。
-- v1 的匿名表重命名为 `*_v1_legacy`；v2 的 Argon2 密码表重命名为 `*_v2_legacy`，都不会被静默删除。v4 给 `users` 增加公开统计列并创建社交表；v5 增加 `friend_code` 与好友关系表；v6 增加 `friend_visits`；v7 增加 `collectibles`；v8 增加 `garden_plots` / `garden_steals`；v9 增加浇水状态；v10 增加 `users.garden_harvests` 与稀有种子解锁；v11 增加 `garden_helps`；v12 增加作物统计与来访日志；v13 增加每日菜园订单；v14 增加 `users.night_best`。
+- 表：`users`、`sessions`、`login_challenges`、`saves`、`events`、`bots`、`postcards`、`postcard_sends`、`friend_requests`、`friendships`、`friend_visits`、`collectibles`、`garden_plots`、`garden_steals`、`garden_helps`、`garden_crop_stats`、`garden_actions`、`garden_quests`；PostgreSQL 16。
+- 迁移在 `server/migrations/`，用 sqlx 在启动时执行并记录版本；SQLite 时代的历史版本由一次性导入工具处理。
+- 历史 SQLite 数据导入：`MOSS_SQLITE_PATH=/path/moss.db MOSS_DATABASE_URL=postgres://... cargo run --bin migrate_sqlite`。工具会清空目标库后按外键顺序导入，并重置自增序列。
 - `verifier` 是 256 位派生值；它等价于本站的登录密钥，数据库泄露仍会导致账号被冒用，请限制 DB 访问并备份加密。
-- 备份：`sqlite3 data/moss.db ".backup 'backup.db'"`，或停服务后连同 `-wal/-shm` 一起复制。
+- 备份：`pg_dump`（Docker 部署用 `docker exec moss-postgres pg_dump -U moss moss > backup.sql`），恢复前先停 moss-sync。
 - 事件表会持续增长；上线后按周归档或保留 90 天。
 
 ## 当前线上部署（HTTP）
 
 - 主机 `/home/jas/games/moss-sync`，release 二进制 `./moss-sync`，systemd user unit `moss-sync.service`（`enable --now`，linger 已开）。
 - 只监听 `127.0.0.1:17322`；`serve.py` 在 17321 上把 `/api/*` 反代过来，因此页面和 API 同源，不需要新开公网端口。
-- 数据库 `data/moss.db`。
-- 重新部署：上传源码 → `cargo build --release --locked` → `cp target/release/moss-sync ./moss-sync` → `systemctl --user restart moss-sync`。
+- 数据库：独立 Docker 容器 `moss-postgres`（PostgreSQL 16），只监听 `127.0.0.1:5433`，数据在 `/home/jas/games/moss-postgres/data`；连接串在 `/home/jas/games/moss-sync/database.env`（600）。
+- 重新部署：上传源码 → `cargo build --release --locked --bin moss-sync --bin migrate_sqlite` → 备份旧二进制 → `cp target/release/moss-sync ./moss-sync` → `systemctl --user restart moss-sync`。
 - HTTP 下按上面的挑战应答运行；真正消除风险仍需 TLS。
 
 ### 重置密码
 
 ```bash
 cd /home/jas/games/moss-sync
-python3 scripts/reset_password.py --db data/moss.db --username BDD
+python3 scripts/reset_password.py --docker-container moss-postgres \
+  --db-user moss --db-name moss --username BDD
 ```
 
-脚本会先用 SQLite backup 备份数据库，再替换 verifier 并吊销该用户的全部会话；不会打印密码或 verifier。自动化可用 `--password-stdin`（密码从 stdin 读入，避免进 shell history）。
+脚本用 psql 变量传参，替换 verifier 并吊销该用户的全部会话；不会打印密码或 verifier。自动化可用 `--password-stdin`。本地 PG 可用 `--database-url postgres://localhost/moss`。
 
 ## 部署建议
 

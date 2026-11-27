@@ -31,7 +31,7 @@
 
 ## 2. Rust 后端：积木，不追大而全
 
-- 当前 `moss-sync` 用 **axum + rusqlite** 自行组装，专注账号/元数据 CRUD。
+- 当前 `moss-sync` 用 **axum + sqlx + PostgreSQL 16** 自行组装，专注账号/元数据 CRUD；生产 PG 跑在独立 Docker 容器，只监听 127.0.0.1:5433。
 - 不引入 colyseus-rs：我们没有实时房间、帧同步或状态广播。为了「以后可能」上房间而现在引入，只会增加耦合。
 - 如果未来做联机（例如多人同图、实时协作分拣），**另起一个服务** `moss-realtime`：
   - 用 colyseus-rs 或 axum WebSocket 做房间/状态同步；
@@ -136,5 +136,5 @@
 | Node | `.nvmrc` 固定 24；`engines >= 20` |
 | 前端构建 | Vite 主版本锁在 `package-lock.json`，升级单独提交 |
 | Rust | stable + `Cargo.lock`；axum 0.8 系列 |
-| 数据库 | `PRAGMA user_version`；v1 匿名表迁移为 `*_v1_legacy`，不静默删除 |
+| 数据库 | PostgreSQL 16；`server/migrations/` 由 sqlx 启动时执行；SQLite 历史数据用 `migrate_sqlite` 一次性导入 |
 | 游戏存档 | `state.version` 单调递增，加载时归一化并向后兼容 |

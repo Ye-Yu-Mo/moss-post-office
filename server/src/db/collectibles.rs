@@ -1,5 +1,5 @@
-use rusqlite::{params, OptionalExtension, TransactionBehavior};
 use serde::Serialize;
+use sqlx::Row;
 
 use crate::{db::Db, error::ApiError};
 
@@ -26,30 +26,26 @@ pub struct Collectible {
 
 impl Db {
     pub async fn list_collectibles(&self, user_id: String) -> Result<Vec<Collectible>, ApiError> {
-        self.call(move |conn| {
-            let mut statement = conn.prepare(
-                "SELECT id, kind, template, edition, serial, image_key, minted_at
-                 FROM collectibles WHERE user_id = ?1
-                 ORDER BY kind, template",
-            )?;
-            let rows = statement.query_map([user_id], |row| {
-                Ok(Collectible {
-                    id: row.get(0)?,
-                    kind: row.get(1)?,
-                    template: row.get(2)?,
-                    edition: row.get(3)?,
-                    serial: row.get(4)?,
-                    image_key: row.get(5)?,
-                    minted_at: row.get(6)?,
-                })
-            })?;
-            let mut items = Vec::new();
-            for row in rows {
-                items.push(row?);
-            }
-            Ok(items)
-        })
-        .await
+        let rows = sqlx::query(
+            "SELECT id, kind, template, edition, serial, image_key, minted_at
+             FROM collectibles WHERE user_id = $1
+             ORDER BY kind, template",
+        )
+        .bind(user_id)
+        .fetch_all(self.pool())
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|row| Collectible {
+                id: row.get(0),
+                kind: row.get(1),
+                template: row.get(2),
+                edition: row.get(3),
+                serial: row.get(4),
+                image_key: row.get(5),
+                minted_at: row.get(6),
+            })
+            .collect())
     }
 
     /// Mints one collectible per user/kind/template while the fixed edition lasts.
@@ -62,48 +58,64 @@ impl Db {
         image_key: String,
         now: i64,
     ) -> Result<Option<Collectible>, ApiError> {
-        self.call(move |conn| {
-            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-            let existing: Option<i64> = tx
-                .query_row(
-                    "SELECT id FROM collectibles
-                     WHERE user_id = ?1 AND kind = ?2 AND template = ?3",
-                    params![user_id, kind, template],
-                    |row| row.get(0),
-                )
-                .optional()?;
-            if existing.is_some() {
-                return Ok(None);
-            }
-            let max_serial: i64 = tx.query_row(
-                "SELECT COALESCE(MAX(serial), 0) FROM collectibles
-                 WHERE kind = ?1 AND template = ?2",
-                params![kind, template],
-                |row| row.get(0),
-            )?;
-            if max_serial >= edition {
-                return Ok(None);
-            }
-            let serial = max_serial + 1;
-            tx.execute(
-                "INSERT INTO collectibles
-                 (user_id, kind, template, edition, serial, image_key, minted_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                params![user_id, kind, template, edition, serial, image_key, now],
-            )?;
-            let id = tx.last_insert_rowid();
-            tx.commit()?;
-            Ok(Some(Collectible {
-                id,
-                kind,
-                template,
-                edition,
-                serial,
-                image_key,
-                minted_at: now,
-            }))
-        })
-        .await
+        let mut tx = self.pool().begin().await?;
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1))")
+            .bind(format!("collectible:{kind}:{template}"))
+            .execute(&mut *tx)
+            .await?;
+        let existing = sqlx::query(
+            "SELECT id FROM collectibles
+             WHERE user_id = $1 AND kind = $2 AND template = $3",
+        )
+        .bind(&user_id)
+        .bind(&kind)
+        .bind(&template)
+        .fetch_optional(&mut *tx)
+        .await?;
+        if existing.is_some() {
+            tx.rollback().await?;
+            return Ok(None);
+        }
+        let max_row = sqlx::query(
+            "SELECT COALESCE(MAX(serial), 0) FROM collectibles
+             WHERE kind = $1 AND template = $2",
+        )
+        .bind(&kind)
+        .bind(&template)
+        .fetch_one(&mut *tx)
+        .await?;
+        let max_serial: i64 = max_row.get(0);
+        if max_serial >= edition {
+            tx.rollback().await?;
+            return Ok(None);
+        }
+        let serial = max_serial + 1;
+        let row = sqlx::query(
+            "INSERT INTO collectibles
+             (user_id, kind, template, edition, serial, image_key, minted_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             RETURNING id",
+        )
+        .bind(&user_id)
+        .bind(&kind)
+        .bind(&template)
+        .bind(edition)
+        .bind(serial)
+        .bind(&image_key)
+        .bind(now)
+        .fetch_one(&mut *tx)
+        .await?;
+        let id: i64 = row.get(0);
+        tx.commit().await?;
+        Ok(Some(Collectible {
+            id,
+            kind,
+            template,
+            edition,
+            serial,
+            image_key,
+            minted_at: now,
+        }))
     }
 
     pub async fn mint_postcard_collectibles(
@@ -157,15 +169,15 @@ impl Db {
         user_id: String,
         bots: [&'static str; 2],
     ) -> Result<bool, ApiError> {
-        self.call(move |conn| {
-            let count: i64 = conn.query_row(
-                "SELECT COUNT(DISTINCT template) FROM collectibles
-                 WHERE user_id = ?1 AND kind = 'postcard' AND template IN (?2, ?3)",
-                params![user_id, bots[0], bots[1]],
-                |row| row.get(0),
-            )?;
-            Ok(count >= 2)
-        })
-        .await
+        let row = sqlx::query(
+            "SELECT COUNT(DISTINCT template) FROM collectibles
+             WHERE user_id = $1 AND kind = 'postcard' AND template IN ($2, $3)",
+        )
+        .bind(user_id)
+        .bind(bots[0])
+        .bind(bots[1])
+        .fetch_one(self.pool())
+        .await?;
+        Ok(row.get::<i64, _>(0) >= 2)
     }
 }

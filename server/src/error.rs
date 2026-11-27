@@ -26,6 +26,12 @@ pub enum ApiError {
     Internal(String),
 }
 
+impl From<sqlx::Error> for ApiError {
+    fn from(error: sqlx::Error) -> Self {
+        ApiError::Internal(error.to_string())
+    }
+}
+
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (status, code, message, revision) = match self {

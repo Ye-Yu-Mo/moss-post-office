@@ -14,13 +14,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let config = Config::from_env();
-    let db = Db::new(&config.db_path).map_err(|error| format!("open database: {error}"))?;
+    let db = Db::connect(&config.database_url)
+        .await
+        .map_err(|error| format!("open database: {error}"))?;
     let state = Arc::new(AppState { db });
     let app = build_router(state);
 
     let address: SocketAddr = config.bind.parse()?;
     let listener = tokio::net::TcpListener::bind(address).await?;
-    tracing::info!(%address, db = %config.db_path, "moss sync listening");
+    tracing::info!(%address, "moss sync listening");
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())

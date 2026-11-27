@@ -1,4 +1,4 @@
-use rusqlite::{params, OptionalExtension};
+use sqlx::Row;
 
 use crate::{db::Db, error::ApiError};
 
@@ -16,15 +16,17 @@ impl Db {
         now: i64,
         expires_at: i64,
     ) -> Result<(), ApiError> {
-        self.call(move |conn| {
-            conn.execute(
-                "INSERT INTO sessions (token_hash, user_id, created_at, expires_at, last_seen)
-                 VALUES (?1, ?2, ?3, ?4, ?3)",
-                params![token_hash, user_id, now, expires_at],
-            )?;
-            Ok(())
-        })
-        .await
+        sqlx::query(
+            "INSERT INTO sessions (token_hash, user_id, created_at, expires_at, last_seen)
+             VALUES ($1, $2, $3, $4, $3)",
+        )
+        .bind(token_hash)
+        .bind(user_id)
+        .bind(now)
+        .bind(expires_at)
+        .execute(self.pool())
+        .await?;
+        Ok(())
     }
 
     pub async fn user_by_session(
@@ -32,42 +34,41 @@ impl Db {
         token_hash: String,
         now: i64,
     ) -> Result<Option<SessionUser>, ApiError> {
-        self.call(move |conn| {
-            let user = conn
-                .query_row(
-                    "SELECT u.id, u.username
-                     FROM sessions s
-                     JOIN users u ON u.id = s.user_id
-                     WHERE s.token_hash = ?1 AND s.expires_at > ?2",
-                    params![token_hash, now],
-                    |row| {
-                        Ok(SessionUser {
-                            id: row.get(0)?,
-                            username: row.get(1)?,
-                        })
-                    },
-                )
-                .optional()?;
-            if let Some(ref user) = user {
-                conn.execute(
-                    "UPDATE sessions SET last_seen = ?1 WHERE token_hash = ?2",
-                    params![now, token_hash],
-                )?;
-                conn.execute(
-                    "UPDATE users SET last_active = ?1 WHERE id = ?2",
-                    params![now, user.id],
-                )?;
-            }
-            Ok(user)
-        })
-        .await
+        let row = sqlx::query(
+            "SELECT u.id, u.username
+             FROM sessions s
+             JOIN users u ON u.id = s.user_id
+             WHERE s.token_hash = $1 AND s.expires_at > $2",
+        )
+        .bind(&token_hash)
+        .bind(now)
+        .fetch_optional(self.pool())
+        .await?;
+        let Some(row) = row else {
+            return Ok(None);
+        };
+        let user = SessionUser {
+            id: row.get(0),
+            username: row.get(1),
+        };
+        sqlx::query("UPDATE sessions SET last_seen = $1 WHERE token_hash = $2")
+            .bind(now)
+            .bind(&token_hash)
+            .execute(self.pool())
+            .await?;
+        sqlx::query("UPDATE users SET last_active = $1 WHERE id = $2")
+            .bind(now)
+            .bind(&user.id)
+            .execute(self.pool())
+            .await?;
+        Ok(Some(user))
     }
 
     pub async fn delete_session(&self, token_hash: String) -> Result<(), ApiError> {
-        self.call(move |conn| {
-            conn.execute("DELETE FROM sessions WHERE token_hash = ?1", [token_hash])?;
-            Ok(())
-        })
-        .await
+        sqlx::query("DELETE FROM sessions WHERE token_hash = $1")
+            .bind(token_hash)
+            .execute(self.pool())
+            .await?;
+        Ok(())
     }
 }

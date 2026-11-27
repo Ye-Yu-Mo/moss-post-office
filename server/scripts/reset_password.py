@@ -2,10 +2,17 @@
 """Reset a Moss Post Office user's password verifier and revoke their sessions.
 
 The password is never stored: this derives the same PBKDF2 verifier the
-browser uses, then replaces the row in `users`. Requires filesystem access to
-the SQLite database.
+browser uses, then replaces the row in PostgreSQL and drops the user's
+sessions. Values are passed to psql as variables, not interpolated into SQL.
 
-    python3 scripts/reset_password.py --db data/moss.db --username BDD
+Local PostgreSQL:
+
+    python3 scripts/reset_password.py --database-url postgres://localhost/moss --username BDD
+
+Postgres running in Docker (the production setup):
+
+    python3 scripts/reset_password.py --docker-container moss-postgres \
+        --db-user moss --db-name moss --username BDD
 
 For automation, pass --password-stdin and pipe one line into stdin.
 """
@@ -13,12 +20,21 @@ For automation, pass --password-stdin and pipe one line into stdin.
 import argparse
 import getpass
 import hashlib
-import sqlite3
+import subprocess
 import sys
-import time
 
 PEPPER = "moss-post-office:auth:v3:"
 ITERATIONS = 100_000
+
+SQL = """
+BEGIN;
+UPDATE users SET verifier = :'verifier'
+ WHERE username_key = :'username_key';
+DELETE FROM sessions
+ WHERE user_id IN (SELECT id FROM users WHERE username_key = :'username_key');
+COMMIT;
+SELECT username FROM users WHERE username_key = :'username_key';
+"""
 
 
 def derive_verifier(username: str, password: str) -> str:
@@ -29,18 +45,17 @@ def derive_verifier(username: str, password: str) -> str:
     return digest.hex()
 
 
-def backup_database(conn: sqlite3.Connection, db_path: str) -> str:
-    stamp = time.strftime("%Y%m%d-%H%M%S")
-    backup_path = f"{db_path}.bak-{stamp}"
-    with sqlite3.connect(backup_path) as target:
-        conn.backup(target)
-    return backup_path
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--db", required=True, help="path to moss.db")
     parser.add_argument("--username", required=True, help="display username, case-insensitive")
+    parser.add_argument(
+        "--database-url",
+        default=None,
+        help="postgres://... URL (omit when using --docker-container)",
+    )
+    parser.add_argument("--docker-container", default=None, help="run psql inside this container")
+    parser.add_argument("--db-user", default="moss", help="database user for docker mode")
+    parser.add_argument("--db-name", default="moss", help="database name for docker mode")
     parser.add_argument(
         "--password-stdin",
         action="store_true",
@@ -60,32 +75,63 @@ def main() -> int:
         print("password must be at least 8 characters", file=sys.stderr)
         return 1
 
-    username_key = args.username.strip().lower()
-    verifier = derive_verifier(args.username, password)
+    username = args.username.strip()
+    username_key = username.lower()
+    verifier = derive_verifier(username, password)
 
-    conn = sqlite3.connect(args.db)
-    try:
-        row = conn.execute(
-            "SELECT id FROM users WHERE username_key = ?", (username_key,)
-        ).fetchone()
-        if row is None:
-            print(f"user not found: {args.username}", file=sys.stderr)
+    if args.docker_container:
+        command = [
+            "docker",
+            "exec",
+            "-i",
+            args.docker_container,
+            "psql",
+            "-U",
+            args.db_user,
+            "-d",
+            args.db_name,
+            "-X",
+            "-q",
+            "-v",
+            "ON_ERROR_STOP=1",
+        ]
+    else:
+        if not args.database_url:
+            print("pass --database-url or --docker-container", file=sys.stderr)
             return 1
-        user_id = row[0]
+        command = [
+            "psql",
+            args.database_url,
+            "-X",
+            "-q",
+            "-v",
+            "ON_ERROR_STOP=1",
+        ]
 
-        backup_path = backup_database(conn, args.db)
-        with conn:
-            conn.execute(
-                "UPDATE users SET verifier = ? WHERE id = ?", (verifier, user_id)
-            )
-            revoked = conn.execute(
-                "DELETE FROM sessions WHERE user_id = ?", (user_id,)
-            ).rowcount
-        print(f"reset password for {args.username} ({user_id})")
-        print(f"revoked sessions: {revoked}")
-        print(f"backup: {backup_path}")
-    finally:
-        conn.close()
+    command.extend(
+        [
+            "-v",
+            f"username_key={username_key}",
+            "-v",
+            f"verifier={verifier}",
+            "-f",
+            "-",
+        ]
+    )
+    result = subprocess.run(
+        command,
+        input=SQL,
+        text=True,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        print(result.stderr.strip() or "psql failed", file=sys.stderr)
+        return 1
+    output = result.stdout.strip()
+    if username_key not in output.lower():
+        print("user not found", file=sys.stderr)
+        return 1
+    print(f"updated {username}; sessions revoked")
     return 0
 
 

@@ -1,4 +1,4 @@
-use rusqlite::{TransactionBehavior, params, OptionalExtension};
+use sqlx::Row;
 
 use crate::{db::Db, error::ApiError};
 
@@ -25,103 +25,89 @@ impl Db {
     /// Creates the user, its first session, and optionally the first save in
     /// one transaction. Returns whether a save was created.
     pub async fn register_account(&self, account: NewAccount) -> Result<bool, ApiError> {
-        let outcome = self
-            .call(move |conn| -> rusqlite::Result<Result<bool, ()>> {
-                let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-                let inserted = tx.execute(
-                    "INSERT INTO users (id, username, username_key, verifier, friend_code, created_at, last_login)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
-                    params![
-                        account.user_id,
-                        account.username,
-                        account.username_key,
-                        account.verifier,
-                        account.friend_code,
-                        account.now
-                    ],
-                );
-                if let Err(error) = inserted {
-                    if is_unique_violation(&error) {
-                        return Ok(Err(()));
-                    }
-                    return Err(error);
-                }
+        let mut tx = self.pool().begin().await?;
 
-                tx.execute(
-                    "INSERT INTO sessions (token_hash, user_id, created_at, expires_at, last_seen)
-                     VALUES (?1, ?2, ?3, ?4, ?3)",
-                    params![
-                        account.token_hash,
-                        account.user_id,
-                        account.now,
-                        account.expires_at
-                    ],
-                )?;
+        let inserted = sqlx::query(
+            "INSERT INTO users
+             (id, username, username_key, verifier, friend_code, created_at, last_login)
+             VALUES ($1, $2, $3, $4, $5, $6, $6)",
+        )
+        .bind(&account.user_id)
+        .bind(&account.username)
+        .bind(&account.username_key)
+        .bind(&account.verifier)
+        .bind(&account.friend_code)
+        .bind(account.now)
+        .execute(&mut *tx)
+        .await;
 
-                let mut created_save = false;
-                if let Some(payload) = account.save_payload {
-                    tx.execute(
-                        "INSERT INTO saves (user_id, revision, payload, client_ts, updated_at)
-                         VALUES (?1, 1, ?2, ?3, ?3)",
-                        params![account.user_id, payload, account.now],
-                    )?;
-                    created_save = true;
-                }
-                tx.commit()?;
-                Ok(Ok(created_save))
-            })
-            .await?;
-
-        match outcome {
-            Ok(created_save) => Ok(created_save),
-            Err(()) => Err(ApiError::UsernameTaken),
+        if let Err(error) = inserted {
+            if is_unique_violation(&error) {
+                return Err(ApiError::UsernameTaken);
+            }
+            return Err(error.into());
         }
+
+        sqlx::query(
+            "INSERT INTO sessions (token_hash, user_id, created_at, expires_at, last_seen)
+             VALUES ($1, $2, $3, $4, $3)",
+        )
+        .bind(&account.token_hash)
+        .bind(&account.user_id)
+        .bind(account.now)
+        .bind(account.expires_at)
+        .execute(&mut *tx)
+        .await?;
+
+        let mut created_save = false;
+        if let Some(payload) = account.save_payload {
+            sqlx::query(
+                "INSERT INTO saves (user_id, revision, payload, client_ts, updated_at)
+                 VALUES ($1, 1, $2, $3, $3)",
+            )
+            .bind(&account.user_id)
+            .bind(payload)
+            .bind(account.now)
+            .execute(&mut *tx)
+            .await?;
+            created_save = true;
+        }
+        tx.commit().await?;
+        Ok(created_save)
     }
 
     pub async fn user_by_username(
         &self,
         username_key: String,
     ) -> Result<Option<UserRecord>, ApiError> {
-        self.call(move |conn| {
-            conn.query_row(
-                "SELECT id, username, verifier FROM users WHERE username_key = ?1",
-                [username_key],
-                |row| {
-                    Ok(UserRecord {
-                        id: row.get(0)?,
-                        username: row.get(1)?,
-                        verifier: row.get(2)?,
-                    })
-                },
-            )
-            .optional()
-        })
-        .await
+        let row = sqlx::query(
+            "SELECT id, username, verifier FROM users WHERE username_key = $1",
+        )
+        .bind(username_key)
+        .fetch_optional(self.pool())
+        .await?;
+        Ok(row.map(|row| UserRecord {
+            id: row.get(0),
+            username: row.get(1),
+            verifier: row.get(2),
+        }))
     }
 
     pub async fn touch_login(&self, user_id: String, now: i64) -> Result<(), ApiError> {
-        self.call(move |conn| {
-            conn.execute(
-                "UPDATE users SET last_login = ?1, last_active = ?1 WHERE id = ?2",
-                params![now, user_id],
-            )?;
-            Ok(())
-        })
-        .await
+        sqlx::query("UPDATE users SET last_login = $1, last_active = $1 WHERE id = $2")
+            .bind(now)
+            .bind(user_id)
+            .execute(self.pool())
+            .await?;
+        Ok(())
     }
 
     pub async fn night_best(&self, user_id: String) -> Result<i64, ApiError> {
-        self.call(move |conn| {
-            let value: Option<i64> = conn
-                .query_row(
-                    "SELECT night_best FROM users WHERE id = ?1",
-                    [user_id],
-                    |row| row.get(0),
-                )
-                .optional()?;
-            Ok(value.unwrap_or(0))
-        })
-        .await
+        let row = sqlx::query("SELECT night_best FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(self.pool())
+            .await?;
+        Ok(row.map(|row| row.get::<i64, _>(0)).unwrap_or(0))
     }
 
     pub async fn update_stats(
@@ -132,23 +118,26 @@ impl Db {
         night_best: i64,
         now: i64,
     ) -> Result<(), ApiError> {
-        self.call(move |conn| {
-            conn.execute(
-                "UPDATE users
-                 SET total_stamps = ?1, expedition_wins = ?2, night_best = ?3, last_active = ?4
-                 WHERE id = ?5",
-                params![total_stamps, expedition_wins, night_best, now, user_id],
-            )?;
-            Ok(())
-        })
-        .await
+        sqlx::query(
+            "UPDATE users
+             SET total_stamps = $1, expedition_wins = $2, night_best = $3, last_active = $4
+             WHERE id = $5",
+        )
+        .bind(total_stamps)
+        .bind(expedition_wins)
+        .bind(night_best)
+        .bind(now)
+        .bind(user_id)
+        .execute(self.pool())
+        .await?;
+        Ok(())
     }
 }
 
-fn is_unique_violation(error: &rusqlite::Error) -> bool {
-    matches!(
-        error,
-        rusqlite::Error::SqliteFailure(code, _)
-            if code.code == rusqlite::ErrorCode::ConstraintViolation
-    )
+fn is_unique_violation(error: &sqlx::Error) -> bool {
+    match error {
+        sqlx::Error::Database(database) => database.code().as_deref() == Some("23505"),
+        _ => false,
+    }
 }
+

@@ -6,7 +6,7 @@
 
 - 交互：房间式导航（邮局 / 镇口 / 邮路 / 守夜），hash 路由，核心玩法不再用弹窗承载
 - 前端：Vite + Vue 3（镇口 / 账号 / 订单 / 邮册 / 月亮 / 工坊 / 远行 / 守夜 / 选种 / 好友后院 / 行前准备 / 事件 / 串门 / 明信片 / 确认弹窗已迁移，盖戳台仍为原生）+ 原生 DOM/CSS + PixiJS 环境粒子（`web/`）
-- 后端：Rust + axum + SQLite，只做账号、云存档和事件（`server/`）
+- 后端：Rust + axum + PostgreSQL 16，只做账号、云存档和事件（`server/`）
 - 线上 <http://47.92.150.181:17321/>：`serve.py` 同源反代 `/api` 到本机 17322
 - 远行材料（纸 / 蜡 / 布）：路况掉落，行前准备消耗，换牌、护信或加固邮袋
 - 材料工坊：用纸 / 蜡 / 布换永久远行强化
@@ -55,8 +55,9 @@ npm run standalone      # 生成 moss-post-office.html
 
 ```bash
 cd server
-cargo test
-MOSS_BIND=127.0.0.1:17322 MOSS_DB=data/moss.db cargo run
+createdb moss_dev
+MOSS_TEST_DATABASE_URL=postgres://localhost/moss_test cargo test
+MOSS_BIND=127.0.0.1:17322 MOSS_DATABASE_URL=postgres://localhost/moss_dev cargo run
 ```
 
 | 接口 | 作用 |

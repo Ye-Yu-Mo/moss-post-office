@@ -10,7 +10,8 @@
 
 ```bash
 python3 serve.py 17331       # 同源代理 /api 到 127.0.0.1:17322
-MOSS_BIND=127.0.0.1:17322 MOSS_DB=/tmp/moss-sync-test.db ./server/target/debug/moss-sync
+createdb moss_test 2>/dev/null || true
+MOSS_BIND=127.0.0.1:17322 MOSS_DATABASE_URL=postgres://localhost/moss_test ./server/target/debug/moss-sync
 ```
 
 3. 构建最新前端：`npm run build`。
@@ -46,7 +47,8 @@ MOSS_QA_BASE=http://47.92.150.181:17321 npm run qa
 
 ```bash
 # 1) release 后端 + 独立数据库
-MOSS_BIND=127.0.0.1:17342 MOSS_DB=/tmp/moss-stress.db ./server/target/release/moss-sync
+createdb moss_stress_pg 2>/dev/null || true
+MOSS_BIND=127.0.0.1:17342 MOSS_DATABASE_URL=postgres://localhost/moss_stress_pg ./server/target/release/moss-sync
 
 # 2) 静态服务，代理到压测后端
 MOSS_API_PORT=17342 python3 serve.py 17341
@@ -57,4 +59,4 @@ MOSS_STRESS_ROOT=http://127.0.0.1:17341 npm run qa:stress
 
 覆盖：静态资源/ETag、200 注册、100 登录、800 广场、400 存档写、300 明信片并发（每日 5 张）、
 60 次纪念戳重复领取、花园收菜/种菜并发、health；输出 p50/p95/p99、状态分布和唯一序号。
-压测后建议 `sqlite3 /tmp/moss-stress.db "PRAGMA integrity_check;"` 并检查 collectibles 重复。
+压测后建议检查 `collectibles` 的重复序号、各表计数和 PostgreSQL 日志。

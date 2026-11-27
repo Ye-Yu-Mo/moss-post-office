@@ -10,15 +10,39 @@ use http_body_util::BodyExt;
 use moss_sync::{build_router, db::Db, AppState};
 use serde_json::{json, Value};
 use sha2::Sha256;
-use tempfile::TempDir;
 use tower::ServiceExt;
 
 const VERIFIER: &str = "abababababababababababababababababababababababababababababababab";
 
-fn test_app() -> (Router, TempDir) {
-    let dir = tempfile::tempdir().expect("temp dir");
-    let db = Db::new(dir.path().join("test.db")).expect("database");
-    (build_router(Arc::new(AppState { db })), dir)
+fn test_database_url() -> String {
+    std::env::var("MOSS_TEST_DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://localhost/moss_test".into())
+}
+
+async fn test_db() -> Db {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let schema = format!(
+        "test_{}_{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    );
+    let url = test_database_url();
+    let admin = sqlx::PgPool::connect(&url)
+        .await
+        .expect("connect test postgres");
+    sqlx::query(&format!("CREATE SCHEMA {schema}"))
+        .execute(&admin)
+        .await
+        .expect("create test schema");
+    drop(admin);
+    Db::connect_in_schema(&url, &schema)
+        .await
+        .expect("database")
+}
+
+async fn test_app() -> Router {
+    build_router(Arc::new(AppState { db: test_db().await }))
 }
 
 async fn json_body(response: axum::response::Response) -> Value {
@@ -133,7 +157,7 @@ async fn login_ok(app: &Router, username: &str) -> Value {
 
 #[tokio::test]
 async fn register_uploads_the_local_save_and_login_reads_it() {
-    let (app, _dir) = test_app();
+    let app = test_app().await;
     let registered = register_ok(
         &app,
         "MossKeeper",
@@ -175,7 +199,7 @@ async fn register_uploads_the_local_save_and_login_reads_it() {
 
 #[tokio::test]
 async fn usernames_are_case_insensitive_and_unique() {
-    let (app, _dir) = test_app();
+    let app = test_app().await;
     register_ok(&app, "MossKeeper", None).await;
 
     let response = app
@@ -189,7 +213,7 @@ async fn usernames_are_case_insensitive_and_unique() {
 
 #[tokio::test]
 async fn wrong_proof_and_nonce_replay_are_rejected() {
-    let (app, _dir) = test_app();
+    let app = test_app().await;
     register_ok(&app, "night_post", None).await;
 
     let nonce = challenge_nonce(&app, "night_post").await;
@@ -221,7 +245,7 @@ async fn wrong_proof_and_nonce_replay_are_rejected() {
 
 #[tokio::test]
 async fn logout_revokes_the_session() {
-    let (app, _dir) = test_app();
+    let app = test_app().await;
     register_ok(&app, "post_office", None).await;
     let logged_in = login_ok(&app, "post_office").await;
     let token = logged_in["token"].as_str().unwrap();
@@ -243,7 +267,7 @@ async fn logout_revokes_the_session() {
 
 #[tokio::test]
 async fn registration_without_a_save_starts_empty() {
-    let (app, _dir) = test_app();
+    let app = test_app().await;
     let registered = register_ok(&app, "empty_bag", None).await;
     assert_eq!(registered["save_revision"], 0);
 
@@ -268,7 +292,7 @@ async fn registration_without_a_save_starts_empty() {
 
 #[tokio::test]
 async fn events_are_batched_and_validated() {
-    let (app, _dir) = test_app();
+    let app = test_app().await;
     let registered = register_ok(&app, "event_keeper", None).await;
     let token = registered["token"].as_str().unwrap();
 
@@ -310,7 +334,7 @@ async fn events_are_batched_and_validated() {
 
 #[tokio::test]
 async fn unauthenticated_requests_are_rejected() {
-    let (app, _dir) = test_app();
+    let app = test_app().await;
     let response = app
         .clone()
         .oneshot(auth_request("GET", "/v1/save", "nope"))
@@ -329,7 +353,7 @@ fn post_json(token: &str, path: &str, body: Value) -> Request<Body> {
 
 #[tokio::test]
 async fn social_square_postcards_and_bots() {
-    let (app, _dir) = test_app();
+    let app = test_app().await;
     let alice = register_ok(
         &app,
         "alice_post",
@@ -479,7 +503,7 @@ async fn social_square_postcards_and_bots() {
 
 #[tokio::test]
 async fn friend_code_request_accept_profile_and_remove() {
-    let (app, _dir) = test_app();
+    let app = test_app().await;
     let alice = register_ok(&app, "friend_alice", None).await;
     let bob = register_ok(&app, "friend_bob", None).await;
     let carol = register_ok(&app, "friend_carol", None).await;
@@ -631,7 +655,7 @@ async fn friend_code_request_accept_profile_and_remove() {
 
 #[tokio::test]
 async fn garden_harvest_and_friend_steal() {
-    let (app, _dir) = test_app();
+    let app = test_app().await;
     let alice = register_ok(&app, "gardener_alice", None).await;
     let bob = register_ok(&app, "gardener_bob", None).await;
     let carol = register_ok(&app, "gardener_carol", None).await;
@@ -819,7 +843,7 @@ async fn garden_harvest_and_friend_steal() {
 
 #[tokio::test]
 async fn garden_rare_crops_unlock_after_harvests() {
-    let (app, _dir) = test_app();
+    let app = test_app().await;
     let grower = register_ok(&app, "rare_grower", None).await;
     let token = grower["token"].as_str().unwrap();
 
@@ -897,7 +921,7 @@ async fn garden_rare_crops_unlock_after_harvests() {
 
 #[tokio::test]
 async fn friend_can_water_once_per_plot() {
-    let (app, _dir) = test_app();
+    let app = test_app().await;
     let alice = register_ok(&app, "water_alice", None).await;
     let bob = register_ok(&app, "water_bob", None).await;
     let carol = register_ok(&app, "water_carol", None).await;
@@ -1032,7 +1056,7 @@ async fn friend_can_water_once_per_plot() {
 
 #[tokio::test]
 async fn daily_garden_quest_harvest_and_claim() {
-    let (app, _dir) = test_app();
+    let app = test_app().await;
     let grower = register_ok(&app, "quest_grower", None).await;
     let token = grower["token"].as_str().unwrap();
 
@@ -1088,7 +1112,7 @@ async fn daily_garden_quest_harvest_and_claim() {
 
 #[tokio::test]
 async fn nightwatch_medals_are_serialized_and_idempotent() {
-    let (app, _dir) = test_app();
+    let app = test_app().await;
     let eve = register_ok(&app, "eve_night", None).await;
     let eve_token = eve["token"].as_str().unwrap();
     let response = app
@@ -1206,7 +1230,7 @@ async fn nightwatch_medals_are_serialized_and_idempotent() {
 
 #[tokio::test]
 async fn save_publishes_best_night_to_square() {
-    let (app, _dir) = test_app();
+    let app = test_app().await;
     let registered = register_ok(&app, "night_rank", None).await;
     let token = registered["token"].as_str().unwrap();
 
@@ -1241,16 +1265,13 @@ async fn save_publishes_best_night_to_square() {
 async fn postcard_daily_limit_is_atomic_under_concurrency() {
     use moss_sync::db::NewPostcard;
 
-    let dir = tempfile::tempdir().expect("temp dir");
-    let db = Arc::new(Db::new(dir.path().join("race.db")).expect("database"));
-    db.call(|conn| {
-        conn.execute(
-            "INSERT OR IGNORE INTO users (id, username, username_key, verifier, created_at)
-             VALUES ('race_user', 'race', 'race', '00', 0)",
-            [],
-        )?;
-        Ok(())
-    })
+    let db = Arc::new(test_db().await);
+    sqlx::query(
+        "INSERT INTO users (id, username, username_key, verifier, created_at)
+         VALUES ('race_user', 'race', 'race', '00', 0)
+         ON CONFLICT DO NOTHING",
+    )
+    .execute(db.pool())
     .await
     .expect("seed user");
     let mut handles = Vec::new();
