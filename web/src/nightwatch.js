@@ -968,7 +968,7 @@ export function createNightWatch({
       existing.cool = 0.3;
       existing.oilTimer = recipe.interval || 0;
       existing.burstTimer = recipe.interval || 0;
-      return { ok: true, fused: true, name: recipe.name, cost: def.cost };
+      return { ok: true, fused: true, id: recipe.id, name: recipe.name, cost: fusionCost };
     }
     if (oil < def.cost) return { ok: false, code: "poor" };
     oil -= def.cost;

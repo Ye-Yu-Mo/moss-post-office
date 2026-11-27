@@ -6676,3 +6676,72 @@ h3 {
     grid-template-columns: 1fr;
   }
 }
+
+/* night fusion codex */
+.night-fusion-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.night-fusion {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+}
+
+.night-fusion.is-found {
+  border-color: rgba(98, 141, 101, 0.5);
+  background: #f3faf0;
+}
+
+.night-fusion.is-locked {
+  opacity: 0.55;
+}
+
+.night-fusion-icon {
+  font-size: 22px;
+  line-height: 1.1;
+  flex: 0 0 auto;
+}
+
+.night-fusion-icon .s-icon {
+  width: 1em;
+  height: 1em;
+}
+
+.night-fusion-copy b {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--ink);
+}
+
+.night-fusion-copy small {
+  display: block;
+  margin-top: 1px;
+  color: var(--muted);
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
+.night-fusion-copy span {
+  display: inline-block;
+  margin-top: 3px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(242, 200, 109, 0.2);
+  color: #7a5a17;
+  font-size: 9.5px;
+}
+
+.night-fusion.is-found .night-fusion-copy span {
+  background: rgba(98, 141, 101, 0.16);
+  color: var(--moss-deep);
+}

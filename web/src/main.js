@@ -545,6 +545,24 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
       target: 3,
       reward: 0.03,
       value: () => state.expeditionWins
+    },
+    {
+      id: "night_gardener",
+      name: "守夜园丁",
+      desc: "在守夜里合成 8 种不同的融合体",
+      icon: "fern",
+      target: 8,
+      reward: 0.02,
+      value: () => (state.nightWatch.fusions || []).length
+    },
+    {
+      id: "night_hybrid",
+      name: "全部点亮",
+      desc: "集齐 14 种融合体",
+      icon: "star",
+      target: 14,
+      reward: 0.03,
+      value: () => (state.nightWatch.fusions || []).length
     }
   ];
 
@@ -1257,7 +1275,7 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
 
   function createInitialState(sound = true) {
     return {
-      version: 14,
+      version: 15,
       stamps: 0,
       runEarned: 0,
       totalEarned: 0,
@@ -1295,7 +1313,8 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
         talents: {},
         pendingMedals: [],
         modifier: null,
-        history: []
+        history: [],
+        fusions: []
       },
       gens: Object.fromEntries(GENERATORS.map((gen) => [gen.id, 0])),
       boughtTotal: Object.fromEntries(GENERATORS.map((gen) => [gen.id, 0])),
@@ -1413,6 +1432,12 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
       clean.nightWatch.kills = Math.max(0, Math.floor(numberOr(raw.nightWatch.kills)));
       clean.nightWatch.points = Math.max(0, Math.floor(numberOr(raw.nightWatch.points)));
       clean.nightWatch.best = Math.min(clean.nightWatch.best, clean.nightWatch.night - 1);
+      if (Array.isArray(raw.nightWatch.fusions)) {
+        const knownFusions = new Set(NW_RECIPE_LIST.map((recipe) => recipe.id));
+        clean.nightWatch.fusions = [
+          ...new Set(raw.nightWatch.fusions.filter((id) => knownFusions.has(id)))
+        ];
+      }
       if (Array.isArray(raw.nightWatch.history)) {
         clean.nightWatch.history = raw.nightWatch.history
           .filter((run) => run && typeof run === "object")
@@ -2536,6 +2561,18 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
       postcardTotal: TOWN_BOTS.length,
       postcardComplete: state.postcardAlbumReward,
       postcardSets,
+      nightFusionCount: (state.nightWatch.fusions || []).length,
+      nightFusions: NW_RECIPE_LIST.map((recipe) => ({
+        id: recipe.id,
+        name: recipe.name,
+        icon: ICONS[recipe.icon],
+        tier: recipe.tier,
+        aName: recipe.aName,
+        bName: recipe.bName,
+        unlockNight: recipe.unlockNight,
+        unlocked: recipe.unlockNight <= Math.max(1, state.nightWatch.night),
+        discovered: (state.nightWatch.fusions || []).includes(recipe.id)
+      })),
       nightMedals: NIGHT_MEDALS.map((medal) => {
         const owned = collectibleFor("nightwatch", medal.template);
         return {
@@ -4886,9 +4923,21 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
     );
   }
 
-  function nightToastForPlace(result) {
+  function recordNightFusion(result) {
+    if (!result || !result.ok || !result.fused || !result.id) return false;
+    const progress = state.nightWatch;
+    if (!Array.isArray(progress.fusions)) progress.fusions = [];
+    if (progress.fusions.includes(result.id)) return false;
+    progress.fusions.push(result.id);
+    saveGame();
+    showToast(`守夜图鉴记下了「${result.name}」。`, 2600);
+    checkAchievements();
+    return true;
+  }
+
+  function nightToastForPlace(result, options = {}) {
     if (result.ok) {
-      if (result.fused) showToast(`融合成了${result.name}。`, 2200);
+      if (result.fused && !options.silentFuse) showToast(`融合成了${result.name}。`, 2200);
       return;
     }
     const messages = {
@@ -4919,7 +4968,8 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
       onCell: (col, row) => {
         if (!nightEngine) return;
         const result = nightEngine.place(Number(col), Number(row));
-        nightToastForPlace(result);
+        const isNewFusion = recordNightFusion(result);
+        nightToastForPlace(result, { silentFuse: isNewFusion });
         pushNightSnapshot();
       },
       onPause: () => {
@@ -7584,6 +7634,8 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
           if (!nightEngine) return null;
           if (nightEngine.snapshot().selected !== type) nightEngine.select(type);
           const placed = nightEngine.place(Number(col), Number(row));
+          const isNewFusion = recordNightFusion(placed);
+          nightToastForPlace(placed, { silentFuse: isNewFusion });
           pushNightSnapshot();
           return placed;
         },

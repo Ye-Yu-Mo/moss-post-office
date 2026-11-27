@@ -64,6 +64,29 @@
 
     <section class="postcard-album">
       <div class="tree-head">
+        <span>守夜融合图鉴</span>
+        <span>{{ snapshot.nightFusionCount }} / {{ snapshot.nightFusions.length }}</span>
+      </div>
+      <p class="tree-note">在守夜里把两株有配方的植物种在同一格就会融合。集齐 8 种和 14 种，各会进一枚邮册纪念邮票。</p>
+      <div class="night-fusion-grid">
+        <article
+          v-for="fusion in snapshot.nightFusions"
+          :key="fusion.id"
+          class="night-fusion"
+          :class="{ 'is-found': fusion.discovered, 'is-locked': !fusion.discovered }"
+        >
+          <span class="night-fusion-icon" aria-hidden="true" v-html="fusion.icon"></span>
+          <div class="night-fusion-copy">
+            <b>{{ fusion.name }}</b>
+            <small>{{ fusion.aName }} + {{ fusion.bName }}{{ fusion.tier === 2 ? " · 进阶" : "" }}</small>
+            <span>{{ fusion.discovered ? "已点亮" : fusion.unlocked ? "还没合成" : `第 ${fusion.unlockNight} 夜解锁` }}</span>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="postcard-album">
+      <div class="tree-head">
         <span>守夜纪念戳</span>
         <span>{{ ownedMedals }} / {{ snapshot.nightMedals.length }}</span>
       </div>
