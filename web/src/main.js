@@ -36,6 +36,9 @@ import {
   createNightWatch,
   NW_TOWER_LIST,
   NW_RECIPE_LIST,
+  NW_TALENTS,
+  talentCost,
+  talentBonus,
   NW_LANES,
   NW_COLS,
   nightStartOil,
@@ -1150,6 +1153,7 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
     buySwitch: document.getElementById("buySwitch"),
     tabs: Array.from(document.querySelectorAll(".tab")),
     upgradeDot: document.getElementById("upgradeDot"),
+    nightDot: document.getElementById("nightDot"),
     orderDot: document.getElementById("orderDot"),
     dispatchDot: document.getElementById("dispatchDot"),
     albumDot: document.getElementById("albumDot"),
@@ -1244,7 +1248,7 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
 
   function createInitialState(sound = true) {
     return {
-      version: 11,
+      version: 12,
       stamps: 0,
       runEarned: 0,
       totalEarned: 0,
@@ -1273,7 +1277,7 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
       postcardSetRewards: [],
       postcardAlbumReward: false,
       collectibles: [],
-      nightWatch: { night: 1, best: 0, wins: 0, kills: 0 },
+      nightWatch: { night: 1, best: 0, wins: 0, kills: 0, points: 0, talents: {} },
       gens: Object.fromEntries(GENERATORS.map((gen) => [gen.id, 0])),
       boughtTotal: Object.fromEntries(GENERATORS.map((gen) => [gen.id, 0])),
       upgrades: [],
@@ -1388,7 +1392,18 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
       clean.nightWatch.best = Math.max(0, Math.floor(numberOr(raw.nightWatch.best)));
       clean.nightWatch.wins = Math.max(0, Math.floor(numberOr(raw.nightWatch.wins)));
       clean.nightWatch.kills = Math.max(0, Math.floor(numberOr(raw.nightWatch.kills)));
+      clean.nightWatch.points = Math.max(0, Math.floor(numberOr(raw.nightWatch.points)));
       clean.nightWatch.best = Math.min(clean.nightWatch.best, clean.nightWatch.night - 1);
+      const talents = raw.nightWatch.talents;
+      if (talents && typeof talents === "object") {
+        NW_TALENTS.forEach((talent) => {
+          const level = Math.max(
+            0,
+            Math.min(talent.max, Math.floor(numberOr(talents[talent.id])))
+          );
+          if (level > 0) clean.nightWatch.talents[talent.id] = level;
+        });
+      }
     }
     clean.bellActiveUntil = numberOr(raw.bellActiveUntil);
     clean.bellReadyAt = numberOr(raw.bellReadyAt);
@@ -4551,8 +4566,37 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
       recipes,
       towerCount: towers.filter((tower) => tower.unlocked).length,
       recipeCount: recipes.filter((recipe) => recipe.unlocked).length,
+      points: progress.points,
+      talentSummary: nightTalentSummary(progress.talents),
+      talents: NW_TALENTS.map((talent) => {
+        const level = Math.max(
+          0,
+          Math.min(talent.max, Math.floor(progress.talents[talent.id] || 0))
+        );
+        const maxed = level >= talent.max;
+        const cost = talentCost(level);
+        return {
+          ...talent,
+          level,
+          cost,
+          maxed,
+          affordable: !maxed && progress.points >= cost
+        };
+      }),
       nextText
     };
+  }
+
+  function nightTalentSummary(talents) {
+    const bonus = talentBonus(talents);
+    const parts = [];
+    if (bonus.startOil) parts.push(`开局灯油 +${bonus.startOil}`);
+    if (bonus.damage > 1) parts.push(`伤害 +${Math.round((bonus.damage - 1) * 100)}%`);
+    if (bonus.hp > 1) parts.push(`植物生命 +${Math.round((bonus.hp - 1) * 100)}%`);
+    if (bonus.baseHp) parts.push(`门板 +${bonus.baseHp}`);
+    if (bonus.drip) parts.push(`灯油 +${bonus.drip.toFixed(2)}/秒`);
+    if (bonus.cooldown < 1) parts.push(`冷却 -${Math.round((1 - bonus.cooldown) * 100)}%`);
+    return parts.length ? `当前加成：${parts.join(" · ")}` : "还没有点天赋，先攒一点。";
   }
 
   function buildNightPanel() {
@@ -4561,10 +4605,38 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
     const root = els.panelBody.querySelector("[data-night-panel-root]");
     if (!root) return;
     mountNightWatchPanel(root, {
-      handlers: { onOpen: openNightWatch },
+      handlers: { onOpen: openNightWatch, onBuyTalent: buyNightTalent },
       icons: ICONS
     });
     setNightPanelSnapshot(nightPanelSnapshot());
+  }
+
+  function buyNightTalent(id) {
+    if (!state) return;
+    const talent = NW_TALENTS.find((item) => item.id === id);
+    if (!talent) return;
+    const progress = state.nightWatch;
+    const level = Math.max(
+      0,
+      Math.min(talent.max, Math.floor(progress.talents[id] || 0))
+    );
+    if (level >= talent.max) {
+      showToast("这一项已经点满了。", 2000);
+      return;
+    }
+    const cost = talentCost(level);
+    if (progress.points < cost) {
+      playDenySound();
+      showToast(`天赋点不够，还差 ${cost - progress.points} 点。`, 2200);
+      return;
+    }
+    progress.points -= cost;
+    progress.talents[id] = level + 1;
+    saveGame();
+    refreshLive();
+    setNightPanelSnapshot(nightPanelSnapshot());
+    updateTabBadges();
+    showToast(`${talent.name}升到 ${level + 1} 级。`, 2400);
   }
 
   function pushNightSnapshot() {
@@ -4582,6 +4654,7 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
     nightSpeed = 1;
     nightEngine = createNightWatch({
       level: nightLevel,
+      talents: state.nightWatch.talents,
       onFinish: handleNightFinish
     });
     pushNightSnapshot();
@@ -4613,11 +4686,14 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
     progress.best = Math.max(progress.best, result.level);
     progress.wins += 1;
     progress.kills += result.kills;
+    const talentPoints = 1 + (result.level % 5 === 0 ? 1 : 0);
+    progress.points += talentPoints;
     saveGame();
     refreshLive();
+    updateTabBadges();
     showToast(
-      `第 ${result.level} 夜守住了，带回 ${formatNumber(rewards.stamps)} 张邮票。`,
-      4400
+      `第 ${result.level} 夜守住了，带回 ${formatNumber(rewards.stamps)} 张邮票和 ${talentPoints} 点守夜天赋。`,
+      4600
     );
   }
 
@@ -4794,6 +4870,10 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
 
     setText(els.albumDot, String(unseenAchievements));
     setHidden(els.albumDot, unseenAchievements === 0);
+
+    const nightPoints = Math.max(0, Math.floor((state.nightWatch && state.nightWatch.points) || 0));
+    setText(els.nightDot, String(Math.min(nightPoints, 9)));
+    setHidden(els.nightDot, nightPoints === 0);
 
     setText(els.collectionText, `邮戳收藏 ${ownedUpgradeSet.size} / ${UPGRADES.length}`);
   }

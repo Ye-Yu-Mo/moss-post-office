@@ -18,6 +18,29 @@
     <p class="nw-next">{{ snapshot.nextText }}</p>
 
     <div class="nw-section">
+      <div class="tree-head"><span>守夜天赋</span><span>{{ snapshot.points }} 点可用</span></div>
+      <div class="nw-talent-grid">
+        <button
+          v-for="talent in snapshot.talents"
+          :key="talent.id"
+          class="nw-talent"
+          :class="{ 'is-maxed': talent.maxed, 'is-poor': !talent.maxed && !talent.affordable }"
+          type="button"
+          :disabled="talent.maxed || !talent.affordable"
+          @click="handlers.onBuyTalent(talent.id)"
+        >
+          <span class="nw-talent-icon" v-html="icons[talent.icon] || ''"></span>
+          <span class="nw-talent-copy">
+            <b>{{ talent.name }} <small>Lv {{ talent.level }}/{{ talent.max }}</small></b>
+            <p>{{ talent.desc }}</p>
+          </span>
+          <span class="nw-talent-cost">{{ talent.maxed ? "已满" : `${talent.cost} 点` }}</span>
+        </button>
+      </div>
+      <p class="nw-rules">{{ snapshot.talentSummary }}。每守住一夜得 1 点，尾数是 5 的夜（夜班车）再额外 1 点；天赋是永久成长，转生不会清空。</p>
+    </div>
+
+    <div class="nw-section">
       <div class="tree-head"><span>守夜植物</span><span>{{ snapshot.towerCount }} 种</span></div>
       <div class="nw-tower-grid">
         <article

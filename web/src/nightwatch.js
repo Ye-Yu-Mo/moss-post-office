@@ -153,6 +153,35 @@ const ENEMIES = {
 const UNITS = { ...TOWERS };
 for (const recipe of RECIPES) UNITS[recipe.id] = recipe;
 
+export const NW_TALENTS = [
+  { id: "wick", name: "灯芯", icon: "sun", max: 3, desc: "开局多 8 点灯油 / 级" },
+  { id: "powder", name: "火漆", icon: "seal", max: 3, desc: "所有植物伤害 +8% / 级" },
+  { id: "paper", name: "纸甲", icon: "letter", max: 3, desc: "植物生命 +10% / 级" },
+  { id: "bulkhead", name: "门闩", icon: "mailbox", max: 3, desc: "门板 +12 点 / 级" },
+  { id: "drip", name: "油壶", icon: "tea", max: 3, desc: "灯油自然增长 +0.35/秒 / 级" },
+  { id: "quick", name: "快笔", icon: "wind", max: 3, desc: "植物冷却 -6% / 级" }
+];
+
+// 天赋第 1/2/3 级分别要 1/2/3 点，一棵点满 6 点。
+export function talentCost(level) {
+  return Math.max(1, Math.floor(level) + 1);
+}
+
+export function talentBonus(talents = {}) {
+  const level = (id) => {
+    const value = Number(talents && talents[id]);
+    return Number.isFinite(value) ? Math.max(0, Math.min(3, Math.floor(value))) : 0;
+  };
+  return {
+    startOil: 8 * level("wick"),
+    damage: 1 + 0.08 * level("powder"),
+    hp: 1 + 0.1 * level("paper"),
+    baseHp: 12 * level("bulkhead"),
+    drip: 0.35 * level("drip"),
+    cooldown: 1 - 0.06 * level("quick")
+  };
+}
+
 export const NW_TOWER_LIST = Object.entries(TOWERS).map(([id, def]) => ({
   id,
   ...def
@@ -187,6 +216,7 @@ export function nightRewards(level) {
 
 export function createNightWatch({
   level = 1,
+  talents = {},
   onFinish = () => {},
   rng = Math.random
 } = {}) {
@@ -194,11 +224,13 @@ export function createNightWatch({
   const waveTotal = nightWaveCount(nightLevel);
   const hpMul = nightHpScale(nightLevel);
   const speedMul = 1 + Math.min(0.35, 0.03 * (nightLevel - 1));
+  const bonus = talentBonus(talents);
+  const baseMax = NW_BASE_HP + bonus.baseHp;
 
   let phase = "ready";
   let paused = false;
-  let oil = nightStartOil(nightLevel);
-  let baseHp = NW_BASE_HP;
+  let oil = nightStartOil(nightLevel) + bonus.startOil;
+  let baseHp = baseMax;
   let wave = 0;
   let waveQueue = [];
   let spawnIndex = 0;
@@ -289,8 +321,8 @@ export function createNightWatch({
       type,
       col,
       row,
-      hp: def.hp,
-      maxHp: def.hp,
+      hp: Math.round(def.hp * bonus.hp),
+      maxHp: Math.round(def.hp * bonus.hp),
       cool: 0.2,
       oilTimer: def.interval || 0,
       burstTimer: def.interval || 0,
@@ -299,7 +331,7 @@ export function createNightWatch({
   }
 
   function hurt(enemy, damage, def) {
-    enemy.hp -= damage;
+    enemy.hp -= damage * bonus.damage;
     if (def && def.slow) {
       enemy.slowUntil = simTime + (def.slowFor || 2);
       enemy.slowFactor = 1 - def.slow;
@@ -331,7 +363,7 @@ export function createNightWatch({
         kind: "bolt"
       });
     }
-    tower.cool = def.cooldown;
+    tower.cool = def.cooldown * bonus.cooldown;
   }
 
   function burst(tower, def) {
@@ -410,7 +442,7 @@ export function createNightWatch({
     if (!dt) return;
     simTime += dt;
     effects = [];
-    oil = Math.min(999, oil + 1.4 * dt);
+    oil = Math.min(999, oil + (1.4 + bonus.drip) * dt);
 
     if (phase === "break") {
       updateTowers(dt);
@@ -516,8 +548,8 @@ export function createNightWatch({
       oil -= def.cost;
       existing.type = recipe.id;
       existing.fusion = true;
-      existing.maxHp = recipe.hp;
-      existing.hp = recipe.hp;
+      existing.maxHp = Math.round(recipe.hp * bonus.hp);
+      existing.hp = Math.round(recipe.hp * bonus.hp);
       existing.cool = 0.3;
       existing.oilTimer = recipe.interval || 0;
       existing.burstTimer = recipe.interval || 0;
@@ -594,7 +626,7 @@ export function createNightWatch({
       breakLeft: Math.max(0, Number(breakClock.toFixed(1))),
       oil: Math.floor(oil),
       baseHp,
-      baseMax: NW_BASE_HP,
+      baseMax,
       kills,
       selected,
       cards: NW_TOWER_LIST.map((tower) => ({
