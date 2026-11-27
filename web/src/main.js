@@ -1257,7 +1257,7 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
 
   function createInitialState(sound = true) {
     return {
-      version: 13,
+      version: 14,
       stamps: 0,
       runEarned: 0,
       totalEarned: 0,
@@ -1286,7 +1286,16 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
       postcardSetRewards: [],
       postcardAlbumReward: false,
       collectibles: [],
-      nightWatch: { night: 1, best: 0, wins: 0, kills: 0, points: 0, talents: {}, pendingMedals: [] },
+      nightWatch: {
+        night: 1,
+        best: 0,
+        wins: 0,
+        kills: 0,
+        points: 0,
+        talents: {},
+        pendingMedals: [],
+        modifier: null
+      },
       gens: Object.fromEntries(GENERATORS.map((gen) => [gen.id, 0])),
       boughtTotal: Object.fromEntries(GENERATORS.map((gen) => [gen.id, 0])),
       upgrades: [],
@@ -1403,6 +1412,17 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
       clean.nightWatch.kills = Math.max(0, Math.floor(numberOr(raw.nightWatch.kills)));
       clean.nightWatch.points = Math.max(0, Math.floor(numberOr(raw.nightWatch.points)));
       clean.nightWatch.best = Math.min(clean.nightWatch.best, clean.nightWatch.night - 1);
+      const savedModifier = raw.nightWatch.modifier;
+      if (
+        savedModifier &&
+        Number.isFinite(Number(savedModifier.day)) &&
+        NW_MODIFIERS.some((modifier) => modifier.id === savedModifier.id)
+      ) {
+        clean.nightWatch.modifier = {
+          day: Math.floor(Number(savedModifier.day)),
+          id: savedModifier.id
+        };
+      }
       if (Array.isArray(raw.nightWatch.pendingMedals)) {
         clean.nightWatch.pendingMedals = [
           ...new Set(
@@ -4566,6 +4586,12 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
   let nightModifierOverride = "";
   let nightNoticeId = 0;
 
+  function todayIndex() {
+    const now = new Date();
+    const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+    return Math.floor(local.getTime() / 86400000);
+  }
+
   function currentNightModifier() {
     if (nightModifierOverride) {
       return (
@@ -4573,7 +4599,32 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
         dailyModifier()
       );
     }
+    const saved = state && state.nightWatch && state.nightWatch.modifier;
+    if (saved && saved.day === todayIndex()) {
+      const found = NW_MODIFIERS.find((modifier) => modifier.id === saved.id);
+      if (found) return found;
+    }
     return dailyModifier();
+  }
+
+  function rerollNightModifier() {
+    if (!state) return;
+    const progress = state.nightWatch;
+    if (progress.points < 1) {
+      playDenySound();
+      showToast("换词条要 1 点守夜天赋，先去守一夜吧。", 2600);
+      return;
+    }
+    const current = currentNightModifier();
+    const pool = NW_MODIFIERS.filter((modifier) => modifier.id !== current.id);
+    const next = pool[Math.floor(Math.random() * pool.length)];
+    progress.points -= 1;
+    progress.modifier = { day: todayIndex(), id: next.id };
+    saveGame();
+    refreshLive();
+    setNightPanelSnapshot(nightPanelSnapshot());
+    updateTabBadges();
+    showToast(`今天的词条换成了「${next.name}」，扣 1 点守夜天赋。`, 3800);
   }
 
   function nightModifierSnapshot(modifier) {
@@ -4625,7 +4676,10 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
       towerCount: towers.filter((tower) => tower.unlocked).length,
       recipeCount: recipes.filter((recipe) => recipe.unlocked).length,
       points: progress.points,
-      modifier: nightModifierSnapshot(currentNightModifier()),
+      modifier: {
+        ...nightModifierSnapshot(currentNightModifier()),
+        canReroll: progress.points >= 1
+      },
       enemies: NW_ENEMY_LIST.map((enemy) => ({
         ...enemy,
         unlocked: enemy.unlockNight <= night
@@ -4669,7 +4723,11 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
     const root = els.panelBody.querySelector("[data-night-panel-root]");
     if (!root) return;
     mountNightWatchPanel(root, {
-      handlers: { onOpen: openNightWatch, onBuyTalent: buyNightTalent },
+      handlers: {
+        onOpen: openNightWatch,
+        onBuyTalent: buyNightTalent,
+        onRerollModifier: rerollNightModifier
+      },
       icons: ICONS
     });
     setNightPanelSnapshot(nightPanelSnapshot());

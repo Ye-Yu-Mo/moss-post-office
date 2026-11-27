@@ -20,9 +20,15 @@
         <span class="nw-modifier-kicker">今日词条</span>
         <b>{{ snapshot.modifier.name }}</b>
         <span v-if="snapshot.modifier.rewardText" class="nw-modifier-reward">{{ snapshot.modifier.rewardText }}</span>
+        <button
+          class="link-btn nw-reroll"
+          type="button"
+          :disabled="!snapshot.modifier.canReroll"
+          @click="handlers.onRerollModifier"
+        >换一条 · 1 点</button>
       </div>
       <p>{{ snapshot.modifier.desc }}</p>
-      <small>每天 0 点换一条，失败可以原地重试。</small>
+      <small>每天 0 点自动换一条；也可以花 1 点守夜天赋立刻重摇。</small>
     </div>
 
     <p class="nw-next">{{ snapshot.nextText }}</p>

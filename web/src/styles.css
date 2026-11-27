@@ -6332,6 +6332,15 @@ h3 {
   color: var(--ink);
 }
 
+.nw-modifier .nw-reroll {
+  margin-left: auto;
+  font-size: 11px;
+}
+
+.nw-modifier-reward + .nw-reroll {
+  margin-left: 0;
+}
+
 .nw-modifier-reward {
   margin-left: auto;
   padding: 2px 8px;
