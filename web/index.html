@@ -16,7 +16,9 @@
 
 </head>
 <body>
-<div class="page">
+<div class="app-shell">
+  <nav class="room-nav" id="roomNav" aria-label="房间"></nav>
+  <div class="app-body">
   <header class="topbar">
     <div class="brand">
       <div class="brand-seal" aria-hidden="true">
@@ -48,6 +50,9 @@
     </div>
   </header>
 
+  <main class="room-stack">
+  <section class="room" data-room="hall">
+  <div class="page">
   <main class="game-grid">
     <section class="stage-card" id="stageCard" aria-label="苔藓邮局寄信窗口">
       <div class="stage-head">
@@ -154,10 +159,8 @@
       <div class="tabs" role="tablist" aria-label="邮局小店分类">
         <button class="tab" id="tabPosties" type="button" role="tab" aria-selected="true" aria-controls="panelBody" data-tab="posties">邮差</button>
         <button class="tab" id="tabOrders" type="button" role="tab" aria-selected="false" aria-controls="panelBody" data-tab="orders" tabindex="-1">信件 <span class="tab-count" id="orderDot" hidden>0</span></button>
-        <button class="tab" id="tabDispatch" type="button" role="tab" aria-selected="false" aria-controls="panelBody" data-tab="dispatch" tabindex="-1">邮路 <span class="tab-count" id="dispatchDot" hidden>0</span></button>
         <button class="tab" id="tabUpgrades" type="button" role="tab" aria-selected="false" aria-controls="panelBody" data-tab="upgrades" tabindex="-1">工坊 <span class="tab-count" id="upgradeDot" hidden>0</span></button>
         <button class="tab" id="tabAlbum" type="button" role="tab" aria-selected="false" aria-controls="panelBody" data-tab="album" tabindex="-1">邮册 <span class="tab-count" id="albumDot" hidden>0</span></button>
-        <button class="tab" id="tabNight" type="button" role="tab" aria-selected="false" aria-controls="panelBody" data-tab="night" tabindex="-1">守夜 <span class="tab-count" id="nightDot" hidden>0</span></button>
         <button class="tab" id="tabMoon" type="button" role="tab" aria-selected="false" aria-controls="panelBody" data-tab="moon" tabindex="-1">月亮 <span class="tab-count" id="moonDot" hidden>!</span></button>
       </div>
 
@@ -177,23 +180,21 @@
       <button class="link-btn" id="resetBtn" type="button">重新开张</button>
     </div>
   </footer>
-</div>
+  </div>
+  </section>
 
-<div class="mobile-dock" id="mobileDock" role="region" aria-label="快捷窗口">
-  <div class="mobile-dock-inner">
-    <div class="quick-stats">
-      <span class="quick-label">存票夹</span>
-      <strong id="quickStamps">0</strong>
-      <span id="quickRate">+0/秒</span>
-    </div>
-    <button class="quick-shop" id="quickShopBtn" type="button" aria-label="跳到邮局小店">
-      <span class="s-icon" style="--r:5;--c:1" aria-hidden="true"></span>
-      <span>小店</span>
-    </button>
-    <button class="quick-seal" id="quickStampBtn" type="button" aria-label="盖戳寄信，获得 1 张邮票">
-      <span>盖戳</span>
-      <b id="quickGain">+1</b>
-    </button>
+  <section class="room" data-room="town" hidden>
+    <div class="room-inner" data-town-host></div>
+  </section>
+
+  <section class="room" data-room="routes" hidden>
+    <div class="room-inner" data-routes-host></div>
+  </section>
+
+  <section class="room" data-room="night" hidden>
+    <div class="room-inner" data-night-host></div>
+  </section>
+  </main>
   </div>
 </div>
 

@@ -94,7 +94,7 @@
         </p>
         <div class="nw-overlay-actions">
           <button class="primary-btn" type="button" @click="handlers.onStart">开始守夜</button>
-          <button class="secondary-btn" type="button" @click="handlers.onClose">回邮局</button>
+          <button class="secondary-btn" type="button" @click="handlers.onClose">回守夜</button>
         </div>
       </div>
 
@@ -104,7 +104,7 @@
         <p>灯油和雾都停住了。回邮局会放弃这一夜，不扣存档。</p>
         <div class="nw-overlay-actions">
           <button class="primary-btn" type="button" @click="handlers.onPause">继续守夜</button>
-          <button class="secondary-btn" type="button" @click="handlers.onClose">回邮局</button>
+          <button class="secondary-btn" type="button" @click="handlers.onClose">回守夜</button>
         </div>
       </div>
 

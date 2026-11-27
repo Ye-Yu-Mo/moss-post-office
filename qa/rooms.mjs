@@ -1,0 +1,180 @@
+import { chromium } from "playwright";
+
+const BASE = process.env.MOSS_QA_BASE || "http://127.0.0.1:17331";
+const results = [];
+const failures = [];
+
+function check(name, ok, detail = "") {
+  results.push({ name, ok, detail });
+  if (!ok) failures.push(`${name}${detail ? ` — ${detail}` : ""}`);
+  console.log(`${ok ? "ok  " : "FAIL"} ${name}${detail ? ` — ${detail}` : ""}`);
+}
+
+async function main() {
+  const browser = await chromium.launch({ channel: "chrome", headless: true });
+  const errors = [];
+
+  const desktop = await browser.newContext({ viewport: { width: 1200, height: 900 } });
+  const page = await desktop.newPage();
+  page.on("pageerror", (error) => errors.push(String(error)));
+  page.on("console", (message) => {
+    if (message.type() === "error") errors.push(message.text());
+  });
+
+  await page.goto(`${BASE}/#qa`, { waitUntil: "networkidle" });
+  await page.waitForTimeout(800);
+
+  const room = (name) => page.locator(`section.room[data-room="${name}"]`);
+  const navLabels = await page.locator(".room-label").allInnerTexts();
+  check("nav has four rooms", navLabels.join(",") === "邮局,镇口,邮路,守夜", navLabels.join(","));
+  check("hall is the default room", await room("hall").isVisible());
+  check("no modal on boot", await page.locator("#modal").isHidden());
+
+  const stampBefore = Number((await page.innerText("#stampCount")).replace(/,/g, ""));
+  await page.click("#stampBtn");
+  await page.waitForTimeout(250);
+  const stampAfter = Number((await page.innerText("#stampCount")).replace(/,/g, ""));
+  check("stamp click works", stampAfter > stampBefore, `${stampBefore} -> ${stampAfter}`);
+
+  for (const [tab, marker] of [
+    ["orders", "柜台"],
+    ["upgrades", "邮戳"],
+    ["album", "已贴"],
+    ["moon", "夜班"]
+  ]) {
+    await page.click(`[data-tab="${tab}"]`);
+    await page.waitForTimeout(250);
+    const text = await page.locator("#panelBody").innerText();
+    check(`hall tab ${tab} renders`, text.includes(marker), text.slice(0, 20));
+  }
+
+  await page.locator(".room-btn", { hasText: "镇口" }).click();
+  await page.waitForTimeout(400);
+  check("town room opens", await room("town").isVisible());
+  check("hash follows room", (await page.evaluate(() => location.hash)) === "#/town");
+  check("town logged-out copy", (await room("town").innerText()).includes("还没有登录"));
+
+  const user = `qa_${Date.now().toString().slice(-8)}`;
+  await page.click("#accountBtn");
+  await page.click("[data-account-mode='register']");
+  await page.fill("#accountUser", user);
+  await page.fill("#accountPass", "12345678");
+  await page.click("[data-account-submit]");
+  await page.waitForSelector(".account-user", { timeout: 20000 });
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(1800);
+  check("town loads after register", (await room("town").locator(".friend-code-row").count()) > 0);
+  check("town keeps garden", (await room("town").locator(".garden-grid").count()) > 0);
+  check("closing account modal keeps town", (await room("town").locator("[data-town-root]").count()) > 0);
+
+  const playerGarden = room("town").locator("button", { hasText: "后院" }).first();
+  if (await playerGarden.count()) {
+    await playerGarden.click();
+    await page.waitForTimeout(1200);
+    check("friend garden is a town view", (await room("town").locator("[data-garden-root] .garden-plot").count()) > 0);
+    check("friend garden is not a modal", await page.locator("#modal").isHidden());
+    await room("town").locator("[data-town-back]").click();
+    await page.waitForTimeout(600);
+    check("town returns from garden", (await room("town").locator(".friend-code-row").count()) > 0);
+  }
+
+  const composerButton = room("town").locator("button", { hasText: "寄明信片" }).first();
+  if (await composerButton.count()) {
+    await composerButton.click();
+    await page.waitForTimeout(600);
+    check("postcard composer is a town view", (await room("town").locator(".town-template").count()) > 0);
+    check("postcard composer is not a modal", await page.locator("#modal").isHidden());
+    await room("town").locator("[data-town-back]").click();
+    await page.waitForTimeout(600);
+    check("town returns from composer", (await room("town").locator(".friend-code-row").count()) > 0);
+  }
+
+  await page.evaluate(() => {
+    const state = window.__moss.state();
+    state.totalEarned = 9000;
+    state.stamps = 9000;
+    state.ink = 60;
+  });
+  await page.locator(".room-btn", { hasText: "邮路" }).click();
+  await page.waitForTimeout(500);
+  check("routes room opens", await room("routes").isVisible());
+  check("routes list renders", (await room("routes").locator(".route-card").count()) > 0);
+
+  const routeButton = page.locator(".route-btn:not(:disabled)").first();
+  if (await routeButton.count()) {
+    await routeButton.click();
+    await page.waitForTimeout(500);
+    check("dispatch starts a trip", (await room("routes").locator(".trip-card").count()) > 0);
+  }
+
+  await room("routes").locator("[data-expedition-open]").click();
+  await page.waitForTimeout(500);
+  check("expedition prep is a room view", (await page.locator("[data-exp-prep-root]").count()) > 0);
+  check("prep is not a modal", await page.locator("#modal").isHidden());
+  await page.locator("[data-room-back='routes']").click();
+  await page.waitForTimeout(300);
+  check("prep back returns to routes", (await page.locator("[data-dispatch-root]").count()) > 0);
+
+  await room("routes").locator("[data-expedition-open]").click();
+  await page.waitForTimeout(300);
+  await page.locator(".exp-secondary").click();
+  await page.waitForTimeout(900);
+  check("expedition shell opens", (await page.locator(".exp-shell").count()) > 0);
+  await page.locator(".exp-shell .link-btn").filter({ hasText: "收起" }).first().click();
+  await page.waitForTimeout(400);
+  check("expedition back returns to routes", (await page.locator("[data-dispatch-root]").count()) > 0);
+
+  await page.locator(".room-btn", { hasText: "守夜" }).click();
+  await page.waitForTimeout(500);
+  check("night panel renders", (await page.locator(".nw-panel").count()) > 0);
+  await page.locator(".nw-start").click();
+  await page.waitForTimeout(500);
+  check("night battle opens", (await page.locator(".nw-board").count()) > 0);
+  check("night battle is not a modal", await page.locator("#modal").isHidden());
+  await page.locator("[data-room-back='night']").click();
+  await page.waitForTimeout(400);
+  check("night back returns to panel", (await page.locator(".nw-panel").count()) > 0);
+  check("battle unmounted", (await page.locator(".nw-board").count()) === 0);
+
+  await page.goto(`${BASE}/#/town`, { waitUntil: "networkidle" });
+  await page.waitForTimeout(1500);
+  check("deep link to town", await room("town").isVisible());
+  check("deep link marks nav", (await page.locator(".room-btn.is-active .room-label").innerText()) === "镇口");
+  await page.goBack();
+  await page.waitForTimeout(500);
+  check("browser back changes room", (await page.evaluate(() => location.hash)) !== "#/town");
+
+  check("no console errors (desktop)", errors.length === 0, errors.slice(0, 3).join(" | "));
+  await desktop.close();
+
+  const mobile = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const mpage = await mobile.newPage();
+  const mobileErrors = [];
+  mpage.on("pageerror", (error) => mobileErrors.push(String(error)));
+  await mpage.goto(`${BASE}/#qa`, { waitUntil: "networkidle" });
+  await mpage.waitForTimeout(700);
+  const box = await mpage.locator(".room-nav").boundingBox();
+  check("mobile nav is a bottom bar", Boolean(box) && box.y > 700 && Math.round(box.height) === 64, JSON.stringify(box));
+  check("mobile page has no horizontal overflow",
+    (await mpage.evaluate(() => document.documentElement.scrollWidth - innerWidth)) === 0);
+  for (const label of ["镇口", "邮路", "守夜", "邮局"]) {
+    await mpage.locator(".room-btn", { hasText: label }).click();
+    await mpage.waitForTimeout(300);
+    const visible = await mpage.locator(`section.room[data-room="${label === "邮局" ? "hall" : label === "镇口" ? "town" : label === "邮路" ? "routes" : "night"}"]`).isVisible();
+    check(`mobile nav ${label}`, visible);
+  }
+  check("no console errors (mobile)", mobileErrors.length === 0, mobileErrors.slice(0, 3).join(" | "));
+  await mobile.close();
+  await browser.close();
+
+  console.log(`\n${results.length - failures.length}/${results.length} checks passed`);
+  if (failures.length) {
+    console.error("Failures:\n" + failures.map((item) => `- ${item}`).join("\n"));
+    process.exit(1);
+  }
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

@@ -56,6 +56,9 @@ import {
   unmountNightWatchPanel
 } from "./ui/mountNightWatchPanel.js";
 import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
+import { ROOM_NAMES, currentRoom, writeRoomHash, onRoomHashChange } from "./router.js";
+import { mountRoomNav } from "./ui/mountRoomNav.js";
+import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
 
 (() => {
   "use strict";
@@ -1223,6 +1226,20 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
   let state = null;
   let booted = false;
   let activeTab = "posties";
+  let activeRoom = "hall";
+  let roomView = { routes: "panel", night: "panel" };
+  let townView = "main";
+  let roomNavSignature = "";
+  const roomEls = {
+    hall: document.querySelector('[data-room="hall"]'),
+    town: document.querySelector('[data-room="town"]'),
+    routes: document.querySelector('[data-room="routes"]'),
+    night: document.querySelector('[data-room="night"]'),
+    townHost: document.querySelector("[data-town-host]"),
+    routesHost: document.querySelector("[data-routes-host]"),
+    nightHost: document.querySelector("[data-night-host]"),
+    nav: document.getElementById("roomNav")
+  };
   let combo = 0;
   let comboTimer = 0;
   let stampAnchor = 0;
@@ -2295,24 +2312,20 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
   const TAB_TITLES = {
     posties: "把信交给谁？",
     orders: "柜台上的来信",
-    dispatch: "让信去更远的地方",
     upgrades: "把邮戳磨得亮一点",
     album: "把日子贴成邮票",
-    night: "把雾里的影子挡在门外",
     moon: "开往月亮的夜班车"
   };
 
   const TAB_EYEBROWS = {
     posties: "苔藓镇 · 邮局小店",
     orders: "苔藓镇 · 来信柜台",
-    dispatch: "苔藓镇 · 邮路柜台",
     upgrades: "苔藓镇 · 邮戳工坊",
     album: "苔藓镇 · 集邮册",
-    night: "苔藓镇 · 守夜防线",
     moon: "苔藓镇 · 月亮夜班"
   };
 
-  const TAB_NAMES = ["posties", "orders", "dispatch", "upgrades", "album", "night", "moon"];
+  const TAB_NAMES = ["posties", "orders", "upgrades", "album", "moon"];
 
   function buildShopPanel() {
     shopUi.clear();
@@ -2736,7 +2749,7 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
       return completed;
     }
     updateTabBadges();
-    if (activeTab === "dispatch") {
+    if (activeRoom === "routes" && roomView.routes === "panel") {
       buildDispatchPanel();
     }
     if (announce && !document.hidden) {
@@ -2752,7 +2765,59 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
     return completed;
   }
 
+  function routesHead(title, kicker, backLabel = "回邮局", backTarget = "hall") {
+    return `
+      <div class="room-head">
+        <div>
+          <p class="room-kicker">${kicker}</p>
+          <h2>${title}</h2>
+        </div>
+        <button class="link-btn room-back" type="button" data-room-back="${backTarget}">${backLabel}</button>
+      </div>`;
+  }
+
+  function renderRoutesPanel() {
+    if (!roomEls.routesHost) return;
+    unmountExpedition();
+    unmountExpeditionPrep();
+    roomView.routes = "panel";
+    roomEls.routesHost.innerHTML = `${routesHead("邮路柜台", "苔藓镇 · 邮路")}<div data-dispatch-root></div>`;
+    dispatchBuilt = false;
+    buildDispatchPanel();
+    refreshDispatchUi();
+  }
+
+  function enterRoutesRoom() {
+    if (roomView.routes === "expedition" && state && state.expedition) {
+      renderExpeditionScreen();
+      return;
+    }
+    if (roomView.routes === "prep") {
+      openExpeditionPrep();
+      return;
+    }
+    renderRoutesPanel();
+  }
+
+  function closeRoutesRoom() {
+    unmountExpedition();
+    unmountExpeditionPrep();
+    roomView.routes = "panel";
+  }
+
+  function dispatchPane() {
+    if (!roomEls.routesHost) return null;
+    let pane = roomEls.routesHost.querySelector("[data-dispatch-root]");
+    if (!pane) {
+      roomEls.routesHost.innerHTML = `<div data-dispatch-root></div>`;
+      pane = roomEls.routesHost.querySelector("[data-dispatch-root]");
+    }
+    return pane;
+  }
+
   function buildDispatchPanel() {
+    const pane = dispatchPane();
+    if (!pane) return;
     dispatchBuilt = true;
     const free = freeDispatchSlots();
     const active = state.activeTrips;
@@ -2839,7 +2904,7 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
         </article>`;
     }).join("");
 
-    els.panelBody.innerHTML = `
+    pane.innerHTML = `
       ${expeditionEntryMarkup()}
       <div class="dispatch-summary">
         <span class="dispatch-kicker">邮差调度</span>
@@ -2860,7 +2925,7 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
 
     dispatchUi = {
       freeNote: document.getElementById("dispatchFree"),
-      pips: Array.from(els.panelBody.querySelectorAll(".slot-pip")),
+      pips: Array.from(pane.querySelectorAll(".slot-pip")),
       activeCount: document.getElementById("dispatchActiveCount"),
       routeButtons: new Map(),
       routeRewards: new Map(),
@@ -2869,14 +2934,14 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
     };
 
     ROUTES.forEach((route) => {
-      const button = els.panelBody.querySelector(`[data-route-start="${route.id}"]`);
+      const button = pane.querySelector(`[data-route-start="${route.id}"]`);
       if (button) dispatchUi.routeButtons.set(route.id, button);
-      const reward = els.panelBody.querySelector(`[data-route-reward="${route.id}"]`);
+      const reward = pane.querySelector(`[data-route-reward="${route.id}"]`);
       if (reward) dispatchUi.routeRewards.set(route.id, reward);
     });
 
     state.activeTrips.forEach((trip) => {
-      const card = els.panelBody.querySelector(`[data-trip-id="${trip.id}"]`);
+      const card = pane.querySelector(`[data-trip-id="${trip.id}"]`);
       if (!card) return;
       dispatchUi.tripRefs.set(trip.id, {
         time: card.querySelector("[data-trip-time]"),
@@ -2966,11 +3031,11 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
     showToast(`邮差沿着${route.name}出发了，约 ${formatTripDuration(duration)}后回来。`, 3200);
 
     if (restoreFocus) {
-      const button = els.panelBody.querySelector(`[data-route-start="${route.id}"]`);
+      const button = pane.querySelector(`[data-route-start="${route.id}"]`);
       if (button && !button.disabled) {
         button.focus({ preventScroll: true });
       } else {
-        const nextButton = els.panelBody.querySelector(".route-btn:not(:disabled)");
+        const nextButton = dispatchPane()?.querySelector(".route-btn:not(:disabled)");
         if (nextButton) nextButton.focus({ preventScroll: true });
         else els.tabs.find((tab) => tab.dataset.tab === "dispatch")?.focus({ preventScroll: true });
       }
@@ -2994,7 +3059,7 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
     if (!silent) playReturnSound();
     updateTabBadges();
     saveGame();
-    if (activeTab === "dispatch") buildDispatchPanel();
+    if (activeRoom === "routes" && roomView.routes === "panel") buildDispatchPanel();
 
     if (!silent && !newly.length) {
       showToast(
@@ -3006,11 +3071,11 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
     }
 
     if (restoreFocus) {
-      const nextReady = els.panelBody.querySelector("[data-collect-dispatch]");
+      const nextReady = dispatchPane()?.querySelector("[data-collect-dispatch]");
       if (nextReady) {
         nextReady.focus({ preventScroll: true });
       } else {
-        const nextButton = els.panelBody.querySelector(".route-btn:not(:disabled)");
+        const nextButton = dispatchPane()?.querySelector(".route-btn:not(:disabled)");
         if (nextButton) nextButton.focus({ preventScroll: true });
         else els.tabs.find((tab) => tab.dataset.tab === "dispatch")?.focus({ preventScroll: true });
       }
@@ -3281,7 +3346,7 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
       3400
     );
     if (restoreFocus) {
-      const next = els.panelBody.querySelector("[data-collect-dispatch]");
+      const next = dispatchPane()?.querySelector("[data-collect-dispatch]");
       if (next) next.focus({ preventScroll: true });
     }
   }
@@ -4121,7 +4186,7 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
 
   function expeditionHandlers() {
     return {
-      onClose: () => closeModal(),
+      onClose: () => renderRoutesPanel(),
       onAbandon: () => {
         expConfirmAbandon = true;
         renderExpedition();
@@ -4145,17 +4210,43 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
   }
 
   function renderExpedition() {
-    if (!state || !state.expedition || els.modal.hidden) return;
-    els.modalTitle.textContent = state.expedition.result ? "远行结算" : "雾湖远行";
-    let root = els.modalBody.querySelector("[data-expedition-root]");
+    if (!state || !state.expedition) return;
+    if (activeRoom !== "routes" || roomView.routes !== "expedition") return;
+    let root = roomEls.routesHost.querySelector("[data-expedition-root]");
     if (!root) {
-      els.modalBody.innerHTML = `<div data-expedition-root></div>`;
-      root = els.modalBody.querySelector("[data-expedition-root]");
-      mountExpedition(root, expeditionHandlers());
+      renderExpeditionScreen();
+      return;
     }
+    const title = roomEls.routesHost.querySelector(".room-head h2");
+    if (title) title.textContent = state.expedition.result ? "远行结算" : "雾湖远行";
     setExpeditionSnapshot(expeditionSnapshot());
-    const focusTarget = els.modalBody.querySelector(
+    const focusTarget = roomEls.routesHost.querySelector(
       ".exp-primary, .exp-option, .exp-result-actions button"
+    );
+    if (focusTarget) focusTarget.focus({ preventScroll: true });
+  }
+
+  function renderExpeditionScreen() {
+    if (!state || !state.expedition || !roomEls.routesHost) {
+      renderRoutesPanel();
+      return;
+    }
+    roomView.routes = "expedition";
+    unmountExpeditionPrep();
+    unmountExpedition();
+    roomEls.routesHost.innerHTML = `${routesHead(
+      state.expedition.result ? "远行结算" : "雾湖远行",
+      "苔藓镇 · 远行",
+      "回邮路",
+      "routes"
+    )}<div data-expedition-root></div>`;
+    mountExpedition(
+      roomEls.routesHost.querySelector("[data-expedition-root]"),
+      expeditionHandlers()
+    );
+    setExpeditionSnapshot(expeditionSnapshot());
+    const focusTarget = roomEls.routesHost.querySelector(
+      ".exp-option, .exp-primary, .exp-result-actions button"
     );
     if (focusTarget) focusTarget.focus({ preventScroll: true });
   }
@@ -4191,15 +4282,13 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
       showToast(`累计 ${formatNumber(700)} 张邮票后，邮路会延伸到雾湖之外。`, 3200);
       return;
     }
+    if (activeRoom !== "routes") navigateRoom("routes");
     expeditionPrep = new Set();
-    openModal({
-      title: "收拾邮袋",
-      body: `<div data-exp-prep-root></div>`,
-      footer: false,
-      wide: true,
-      kicker: "苔藓邮局 · 远行准备"
-    });
-    const root = els.modalBody.querySelector("[data-exp-prep-root]");
+    roomView.routes = "prep";
+    unmountExpedition();
+    unmountExpeditionPrep();
+    roomEls.routesHost.innerHTML = `${routesHead("收拾邮袋", "苔藓镇 · 远行准备", "回邮路", "routes")}<div data-exp-prep-root></div>`;
+    const root = roomEls.routesHost.querySelector("[data-exp-prep-root]");
     if (!root) return;
     mountExpeditionPrep(root, {
       onToggle: (id) => toggleExpeditionPrep(id),
@@ -4235,21 +4324,12 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
 
   function openExpeditionModal() {
     if (!state || !state.expedition) return;
+    if (activeRoom !== "routes") navigateRoom("routes");
     expSelection = [];
     expConfirmAbandon = false;
     if (!state.expedition.result) state.expedition.active = true;
-    openModal({
-      title: state.expedition.result ? "远行结算" : "雾湖远行",
-      body: `<div data-expedition-root></div>`,
-      footer: false,
-      wide: true,
-      kicker: "苔藓邮局 · 远行"
-    });
-    mountExpedition(els.modalBody.querySelector("[data-expedition-root]"), expeditionHandlers());
-    setExpeditionSnapshot(expeditionSnapshot());
+    renderExpeditionScreen();
     if (!state.expedition.result) saveGame();
-    const focusTarget = els.modalBody.querySelector(".exp-option, .exp-primary, .exp-result-actions button");
-    if (focusTarget) focusTarget.focus({ preventScroll: true });
   }
 
   function openExpedition() {
@@ -4580,9 +4660,9 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
   function closeExpeditionResult() {
     state.expedition = null;
     saveGame();
-    closeModal();
     refreshLive();
-    if (activeTab === "dispatch") buildDispatchPanel();
+    roomView.routes = "panel";
+    renderRoutesPanel();
   }
 
   function restartExpedition() {
@@ -4593,9 +4673,9 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
     state.expedition = null;
     expConfirmAbandon = false;
     saveGame();
-    closeModal();
     refreshLive();
-    if (activeTab === "dispatch") buildDispatchPanel();
+    roomView.routes = "panel";
+    renderRoutesPanel();
     showToast("你把邮袋留在了路边，空手回到了邮局。", 3600);
   }
 
@@ -4854,10 +4934,14 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
     return parts.length ? `当前加成：${parts.join(" · ")}` : "还没有点天赋，先攒一点。";
   }
 
-  function buildNightPanel() {
-    unmountNightWatchPanel();
-    els.panelBody.innerHTML = `<div data-night-panel-root></div>`;
-    const root = els.panelBody.querySelector("[data-night-panel-root]");
+  function renderNightPanel() {
+    if (!roomEls.nightHost) return;
+    roomView.night = "panel";
+    unmountNightWatch();
+    stopNightClock();
+    nightEngine = null;
+    roomEls.nightHost.innerHTML = `${routesHead("守夜防线", "苔藓镇 · 守夜")}<div data-night-panel-root></div>`;
+    const root = roomEls.nightHost.querySelector("[data-night-panel-root]");
     if (!root) return;
     mountNightWatchPanel(root, {
       handlers: {
@@ -4869,6 +4953,54 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
       icons: ICONS
     });
     setNightPanelSnapshot(nightPanelSnapshot());
+  }
+
+  function enterNightRoom() {
+    renderNightPanel();
+  }
+
+  function closeNightRoom() {
+    if (
+      nightEngine &&
+      (nightEngine.phase === "running" || nightEngine.phase === "break")
+    ) {
+      showToast("离开守夜，这一夜先放下了。", 3000);
+    }
+    unmountNightWatch();
+    unmountNightWatchPanel();
+    stopNightClock();
+    nightEngine = null;
+    roomView.night = "panel";
+  }
+
+  function renderNightBattle() {
+    if (!roomEls.nightHost) return;
+    roomView.night = "battle";
+    unmountNightWatchPanel();
+    roomEls.nightHost.innerHTML = `${routesHead(
+      "守夜防线",
+      "苔藓邮局 · 守夜",
+      "回守夜",
+      "night"
+    )}<div data-night-watch-root></div>`;
+    mountNightWatch(roomEls.nightHost.querySelector("[data-night-watch-root]"), {
+      handlers: nightHandlers(),
+      icons: ICONS,
+      formatNumber
+    });
+    pushNightSnapshot();
+  }
+
+  function closeNightBattle() {
+    unmountNightWatch();
+    stopNightClock();
+    nightEngine = null;
+    renderNightPanel();
+    refreshRoomNav();
+  }
+
+  function buildNightPanel() {
+    renderNightPanel();
   }
 
   function buyNightTalent(id) {
@@ -5052,26 +5184,14 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
       },
       onRetry: () => startNightEngine(nightLevel),
       onNext: () => startNightEngine(nightLevel + 1),
-      onClose: () => closeModal()
+      onClose: () => closeNightBattle()
     };
   }
 
   function openNightWatch() {
     if (!state) return;
-    openModal({
-      title: "守夜防线",
-      body: `<div data-night-watch-root></div>`,
-      footer: false,
-      wide: true,
-      kicker: "苔藓邮局 · 守夜"
-    });
-    const root = els.modalBody.querySelector("[data-night-watch-root]");
-    if (!root) return;
-    mountNightWatch(root, {
-      handlers: nightHandlers(),
-      icons: ICONS,
-      formatNumber
-    });
+    if (activeRoom !== "night") navigateRoom("night");
+    renderNightBattle();
     startNightEngine(Math.max(1, state.nightWatch.night));
   }
 
@@ -5101,6 +5221,161 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
   function currentMoonGain() {
     if (!state) return 0;
     return Math.floor(Math.sqrt(Math.max(0, state.runEarned) / PRESTIGE_BASE) + 1e-9);
+  }
+
+  function roomNavItems() {
+    return [
+      { id: "hall", label: "邮局", icon: ICONS.letter },
+      {
+        id: "town",
+        label: "镇口",
+        icon: ICONS.mailbox,
+        badge: townUnread ? Math.min(townUnread, 9) : 0
+      },
+      {
+        id: "routes",
+        label: "邮路",
+        icon: ICONS.plane,
+        badge: state && state.readyTrips.length ? Math.min(state.readyTrips.length, 9) : 0
+      },
+      {
+        id: "night",
+        label: "守夜",
+        icon: ICONS.star,
+        badge: state && state.nightWatch.points ? Math.min(state.nightWatch.points, 9) : 0
+      }
+    ];
+  }
+
+  function refreshRoomNav() {
+    const items = roomNavItems();
+    const signature = JSON.stringify({ active: activeRoom, items });
+    if (signature === roomNavSignature) return;
+    roomNavSignature = signature;
+    setRoomNavSnapshot({ active: activeRoom, items });
+  }
+
+  function showRoom(name) {
+    ROOM_NAMES.forEach((room) => {
+      const element = roomEls[room];
+      if (element) element.hidden = room !== name;
+    });
+    document.body.dataset.room = name;
+  }
+
+  function leaveHallRoom() {
+    unmountOrders();
+    unmountWorkshop();
+    unmountAlbum();
+    unmountMoon();
+  }
+
+  function enterHallRoom() {
+    if (!TAB_NAMES.includes(activeTab)) activeTab = "posties";
+    switchTab(activeTab);
+  }
+
+  function navigateRoom(name, options = {}) {
+    const next = ROOM_NAMES.includes(name) ? name : "hall";
+    if (!options.force && next === activeRoom) {
+      if (!options.fromHash) writeRoomHash(next);
+      return;
+    }
+    if (activeRoom === "town" && next !== "town") {
+      unmountTown();
+      unmountFriendGarden();
+      unmountPostcardComposer();
+    }
+    if (activeRoom === "routes" && next !== "routes") closeRoutesRoom();
+    if (activeRoom === "night" && next !== "night") closeNightRoom();
+    if (activeRoom === "hall" && next !== "hall") leaveHallRoom();
+    if (!els.modal.hidden) closeModal();
+
+    activeRoom = next;
+    showRoom(next);
+    if (!options.fromHash) writeRoomHash(next);
+
+    if (next === "town") enterTownRoom();
+    else if (next === "routes") enterRoutesRoom();
+    else if (next === "night") enterNightRoom();
+    else enterHallRoom();
+
+    refreshRoomNav();
+    updateTabBadges();
+  }
+
+  function initRoomShell() {
+    mountRoomNav(roomEls.nav, {
+      handlers: { onNavigate: (room) => navigateRoom(room) }
+    });
+    if (roomEls.routesHost) {
+      roomEls.routesHost.addEventListener("click", (event) => {
+        const back = event.target.closest("[data-room-back]");
+        if (back) {
+          if (back.dataset.roomBack === "routes") renderRoutesPanel();
+          else navigateRoom(back.dataset.roomBack || "hall");
+          return;
+        }
+        if (event.target.closest("[data-expedition-open]")) {
+          openExpedition();
+          return;
+        }
+        const scene = event.target.closest("[data-scene]");
+        if (scene) return;
+        const routeButton = event.target.closest("[data-route-start]");
+        if (routeButton) {
+          startDispatch(routeButton.dataset.routeStart, event.detail === 0);
+          return;
+        }
+        const collectButton = event.target.closest("[data-collect-dispatch]");
+        if (collectButton) {
+          collectDispatches(
+            [Number(collectButton.dataset.collectDispatch)],
+            event.detail === 0
+          );
+          return;
+        }
+        if (event.target.closest("#collectAllDispatch")) {
+          collectDispatches(
+            state.readyTrips.map((trip) => trip.id),
+            event.detail === 0
+          );
+          return;
+        }
+        const rushButton = event.target.closest("[data-rush-trip]");
+        if (rushButton) {
+          rushTrip(Number(rushButton.dataset.rushTrip), event.detail === 0);
+        }
+      });
+    }
+    if (roomEls.nightHost) {
+      roomEls.nightHost.addEventListener("click", (event) => {
+        const back = event.target.closest("[data-room-back]");
+        if (!back) return;
+        if (back.dataset.roomBack === "night") closeNightBattle();
+        else navigateRoom(back.dataset.roomBack || "hall");
+      });
+    }
+    if (roomEls.townHost) {
+      roomEls.townHost.addEventListener("click", (event) => {
+        if (event.target.closest("[data-town-home]")) {
+          navigateRoom("hall");
+          return;
+        }
+        if (event.target.closest("[data-town-back]")) {
+          renderTownScreen();
+          return;
+        }
+        if (event.target.closest("[data-town-login]")) {
+          openAccountModal();
+          return;
+        }
+        if (event.target.closest("[data-town-refresh]")) loadTown();
+      });
+    }
+    refreshRoomNav();
+    onRoomHashChange((room) => navigateRoom(room, { fromHash: true }));
+    navigateRoom(currentRoom(), { fromHash: true, force: true });
   }
 
   function switchTab(name, options = {}) {
@@ -5134,10 +5409,6 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
       syncOrders();
       buildOrdersPanel();
       refreshOrdersUi();
-    } else if (name === "dispatch") {
-      syncCompletedTrips();
-      buildDispatchPanel();
-      refreshDispatchUi();
     } else if (name === "upgrades") {
       buildUpgradePanel();
       refreshUpgradeUi();
@@ -5145,8 +5416,6 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
       buildAlbumPanel();
       unseenAchievements = 0;
       updateTabBadges();
-    } else if (name === "night") {
-      buildNightPanel();
     } else {
       buildMoonPanel();
       refreshMoonUi();
@@ -5661,10 +5930,12 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
       `盖戳寄信。等小圆点转进底部的金色弧线再盖是完美三倍；当前每戳 ${formatGain(currentClick)}张邮票`
     );
     const quickClick = baseClickPower() * comboMultiplier() * 1.5;
-    els.quickStampBtn.setAttribute(
-      "aria-label",
-      `快捷盖戳，固定不错 ×1.5，获得 ${formatGain(quickClick)}张邮票`
-    );
+    if (els.quickStampBtn) {
+      els.quickStampBtn.setAttribute(
+        "aria-label",
+        `快捷盖戳，固定不错 ×1.5，获得 ${formatGain(quickClick)}张邮票`
+      );
+    }
 
     setText(els.quickStamps, formatNumber(Math.floor(state.stamps)));
     setText(els.quickRate, `+${formatRate(rate)}/秒`);
@@ -5672,9 +5943,14 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
 
     updateBellUi();
     updateTabBadges();
+    refreshRoomNav();
+    if (activeRoom === "routes") refreshDispatchUi();
+    if (activeRoom === "night" && roomView.night === "panel") {
+      setNightPanelSnapshot(nightPanelSnapshot());
+    }
+    if (activeRoom !== "hall") return;
     if (activeTab === "posties") refreshShopUi();
     else if (activeTab === "orders") refreshOrdersUi();
-    else if (activeTab === "dispatch") refreshDispatchUi();
     else if (activeTab === "upgrades") refreshUpgradeUi();
     else if (activeTab === "album") refreshAlbumUi();
     else refreshMoonUi();
@@ -5970,19 +6246,11 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
   }
 
   function openModal(options) {
-    unmountTown();
     unmountAccount();
-    unmountExpedition();
     unmountSeedModal();
-    unmountFriendGarden();
-    unmountExpeditionPrep();
     unmountInfoModal();
     unmountEventModal();
     unmountFriendProfile();
-    unmountPostcardComposer();
-    unmountNightWatch();
-    stopNightClock();
-    nightEngine = null;
     modalAction = typeof options.action === "function" ? options.action : null;
     modalReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     els.modalTitle.textContent = options.title;
@@ -6011,19 +6279,11 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
 
   function closeModal() {
     if (els.modal.hidden) return;
-    unmountTown();
     unmountAccount();
-    unmountExpedition();
     unmountSeedModal();
-    unmountFriendGarden();
-    unmountExpeditionPrep();
     unmountInfoModal();
     unmountEventModal();
     unmountFriendProfile();
-    unmountPostcardComposer();
-    unmountNightWatch();
-    stopNightClock();
-    nightEngine = null;
     els.modal.hidden = true;
     document.body.style.overflow = "";
     modalAction = null;
@@ -6033,7 +6293,6 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
     if (actions) actions.hidden = false;
     const card = els.modal.querySelector(".modal-card");
     if (card) card.classList.remove("is-wide");
-    if (state && activeTab === "dispatch") buildDispatchPanel();
     if (modalReturnFocus && document.contains(modalReturnFocus)) {
       modalReturnFocus.focus();
     }
@@ -6497,6 +6756,7 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
         refreshAccountButton();
         renderAccountModal();
         flushNightMedals();
+        if (activeRoom === "town") loadTown();
         showToast("账号建好了，本地存档已经一起寄上去。", 4600);
         return { ok: true };
       }
@@ -6536,6 +6796,7 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
       refreshAccountButton();
       renderAccountModal();
       flushNightMedals();
+      if (activeRoom === "town") loadTown();
       showToast("服务器上还没有存档，已把本地存档传上去。", 4600);
       return { ok: true };
     } catch (error) {
@@ -6554,6 +6815,8 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
     if (current && current.token) {
       cloudApi.logout(current).catch(() => {});
     }
+    if (activeRoom === "town") renderTownScreen();
+    refreshRoomNav();
     showToast("已退出账号，本机存档还在。", 3600);
   }
 
@@ -6855,18 +7118,25 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
 
   async function openGardenModal(ownerId) {
     if (!account || !account.token) return;
-    openModal({
-      title: "后院",
-      body: `<div data-garden-root></div>`,
-      footer: false,
-      kicker: "镇口 · 后院"
-    });
-    const root = els.modalBody.querySelector("[data-garden-root]");
+    if (activeRoom !== "town") navigateRoom("town");
+    townView = "garden";
+    unmountTown();
+    unmountPostcardComposer();
+    roomEls.townHost.innerHTML = `
+      <div class="room-head">
+        <div>
+          <p class="room-kicker">镇口 · 后院</p>
+          <h2>后院</h2>
+        </div>
+        <button class="link-btn room-back" type="button" data-town-back>回镇口</button>
+      </div>
+      <div data-garden-root></div>`;
+    const root = roomEls.townHost.querySelector("[data-garden-root]");
     if (!root) return;
     mountFriendGarden(root, {
       onSteal: (plot) => stealGardenPlot(ownerId, Number(plot)),
       onHelp: (plot) => helpGardenPlot(ownerId, Number(plot)),
-      onBack: () => openTown()
+      onBack: () => renderTownScreen()
     });
     setFriendGardenSnapshot({ status: "loading" });
     try {
@@ -6881,7 +7151,9 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
   }
 
   function mountTownView() {
-    const root = document.querySelector("[data-town-root]");
+    const root = roomEls.townHost
+      ? roomEls.townHost.querySelector("[data-town-root]")
+      : null;
     if (!root || !townData) return;
     mountTown(root, {
       data: townData,
@@ -6945,23 +7217,41 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
     return `<div data-town-root></div>`;
   }
 
-  function renderTownModal() {
-    if (!els.modal || els.modal.hidden) return;
-    if (els.modalTitle.textContent !== "镇口") return;
+  function enterTownRoom() {
+    townData = null;
+    townError = "";
+    townLoading = Boolean(account && account.token);
+    renderTownScreen();
+    if (account && account.token) loadTown();
+  }
+
+  function renderTownScreen() {
+    if (!roomEls.townHost) return;
+    townView = "main";
     unmountTown();
-    els.modalBody.innerHTML = townMarkup();
+    unmountFriendGarden();
+    unmountPostcardComposer();
+    roomEls.townHost.innerHTML = `
+      <div class="room-head">
+        <div>
+          <p class="room-kicker">苔藓镇 · 镇口</p>
+          <h2>镇口</h2>
+        </div>
+        <button class="link-btn room-back" type="button" data-town-home>回邮局</button>
+      </div>
+      ${townMarkup()}`;
     if (townData) mountTownView();
     updateTownButton();
   }
 
   async function loadTown() {
     if (!account || !account.token) {
-      renderTownModal();
+      renderTownScreen();
       return;
     }
     townLoading = true;
     townError = "";
-    renderTownModal();
+    renderTownScreen();
     try {
       const [square, mailbox, friendData, owned, ownGarden] = await Promise.all([
         cloudApi.square(account),
@@ -6989,7 +7279,7 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
           ? 1
           : 0);
       townLoading = false;
-      renderTownModal();
+      renderTownScreen();
     } catch (error) {
       townLoading = false;
       if (error.status === 401) {
@@ -6998,28 +7288,16 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
         refreshAccountButton();
       }
       townError = cloudErrorMessage(error);
-      renderTownModal();
+      renderTownScreen();
     }
   }
 
   function openTown() {
-    if (!account || !account.token) {
-      openModal({
-        title: "镇口",
-        body: townLoggedOutMarkup(),
-        footer: false,
-        kicker: "苔藓邮局 · 镇口"
-      });
+    if (els.modal && !els.modal.hidden) closeModal();
+    if (activeRoom !== "town") {
+      navigateRoom("town");
       return;
     }
-    townData = null;
-    townError = "";
-    openModal({
-      title: "镇口",
-      body: townLoadingMarkup(),
-      footer: false,
-      kicker: "苔藓邮局 · 镇口"
-    });
     loadTown();
   }
 
@@ -7178,17 +7456,24 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
 
   function openPostcardComposer(id, kind, name) {
     postcardTarget = { id, kind, name };
-    openModal({
-      title: `给 ${name} 寄明信片`,
-      body: `<div data-postcard-root></div>`,
-      footer: false,
-      kicker: "镇口 · 明信片"
-    });
-    const root = els.modalBody.querySelector("[data-postcard-root]");
+    if (activeRoom !== "town") navigateRoom("town");
+    townView = "composer";
+    unmountTown();
+    unmountFriendGarden();
+    roomEls.townHost.innerHTML = `
+      <div class="room-head">
+        <div>
+          <p class="room-kicker">镇口 · 明信片</p>
+          <h2>给 ${escapeHtml(name)} 寄明信片</h2>
+        </div>
+        <button class="link-btn room-back" type="button" data-town-back>回镇口</button>
+      </div>
+      <div data-postcard-root></div>`;
+    const root = roomEls.townHost.querySelector("[data-postcard-root]");
     if (!root) return;
     mountPostcardComposer(root, {
       onSend: (templateId) => sendTownPostcard(templateId),
-      onBack: () => openTown()
+      onBack: () => renderTownScreen()
     });
     setPostcardComposerSnapshot(postcardComposerSnapshot());
   }
@@ -7393,18 +7678,22 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
 
   function wireEvents() {
     els.stampBtn.addEventListener("click", () => handleStampClick());
-    els.quickStampBtn.addEventListener("click", () => handleStampClick("good"));
+    if (els.quickStampBtn) {
+      els.quickStampBtn.addEventListener("click", () => handleStampClick("good"));
+    }
     els.goldenLetter.addEventListener("click", collectGoldenLetter);
     els.bellBtn.addEventListener("click", useBell);
 
-    els.quickShopBtn.addEventListener("click", () => {
-      const shop = document.querySelector(".shop-card");
-      if (!shop) return;
-      shop.scrollIntoView({
-        behavior: prefersReducedMotion ? "auto" : "smooth",
-        block: "start"
+    if (els.quickShopBtn) {
+      els.quickShopBtn.addEventListener("click", () => {
+        const shop = document.querySelector(".shop-card");
+        if (!shop) return;
+        shop.scrollIntoView({
+          behavior: prefersReducedMotion ? "auto" : "smooth",
+          block: "start"
+        });
       });
-    });
+    }
 
     els.soundBtn.addEventListener("click", toggleSound);
 
@@ -7500,7 +7789,7 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
     els.helpBtn.addEventListener("click", openHelpModal);
     els.resetBtn.addEventListener("click", openResetModal);
     if (els.accountBtn) els.accountBtn.addEventListener("click", openAccountModal);
-    if (els.townBtn) els.townBtn.addEventListener("click", openTown);
+    if (els.townBtn) els.townBtn.addEventListener("click", () => navigateRoom("town"));
 
     els.modalCancel.addEventListener("click", closeModal);
     els.modalConfirm.addEventListener("click", () => {
@@ -7668,6 +7957,7 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
     refreshLive();
     saveGame();
     initCloud();
+    initRoomShell();
 
     if (document.hidden) hiddenAt = Date.now();
 

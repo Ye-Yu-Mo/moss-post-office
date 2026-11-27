@@ -84,6 +84,15 @@
 - 默认保留完全离线的非链上路径；链上只是可选展示/转让，不能成为玩法的前置条件。
 - 合规、地区限制、年龄门槛和税务问题需要在上线前单独评估，尤其是面向中国大陆用户时。
 
+## 6.5 交互结构：房间 + 路由
+
+- 页面从「一张长页 + 层层弹窗」改为房间：邮局 / 镇口 / 邮路 / 守夜，桌面左侧导航栏、手机底部导航栏。
+- `web/src/router.js` 用 hash 记录房间（`#/hall`、`#/town`、`#/routes`、`#/night`），支持刷新、深链接和浏览器前进后退；`#qa` 启动时不会被改写。
+- 邮局保留原有的舞台和三个商店抽屉（邮差 / 信件 / 工坊）以及邮册 / 月亮；镇口承载好友、广场、后院和明信片书写；邮路承载发车和远行（准备、战斗、结算都是房间内视图）；守夜承载面板、档案和塔防战斗。
+- 主玩法不再用弹窗：镇口、后院、明信片书写、远行、守夜都是房间内视图。弹窗只保留账号、帮助、重开/转生确认、选种、随机事件、好友档案、订单丢弃这类短对话。
+- 房间切换会卸载对应的 Vue app；游戏循环、存档和状态机不在 Vue 里。模态打开/关闭不再卸载房间内容（早期迁移时遗留的 `unmountTown` 已移除）。
+- QA：`qa/rooms.mjs`（`npm run qa`）覆盖房间切换、hash、镇口注册与子视图、邮路、远行、守夜、手机导航和 console 错误；见 `qa/README.md`。
+
 ## 7. 前端迁移状态（Vue 3）
 
 - 2026-11-27：接入 Vue 3 + `@vitejs/plugin-vue`；`TownView.vue` 接管镇口（好友 / 收件箱 / 广场），`GardenPanel.vue` 嵌套其中，`AccountView.vue` 接管账号弹窗，`OrdersView.vue` 接管订单面板，`AlbumView.vue` 接管邮册面板，`MoonView.vue` 接管月亮面板，`WorkshopView.vue` 接管工坊面板，`ExpeditionView.vue` 接管远行界面（路线/手牌/营地/结算），`SeedModal.vue` 接管选种，`FriendGardenView.vue` 接管好友/NPC 后院（偷菜/帮浇水），`ExpeditionPrepView.vue` 接管行前准备，`InfoModal.vue` 接管帮助/重开/转生/契约/丢单等确认弹窗，`EventModalView.vue` 接管随机事件，`FriendProfileView.vue` 接管串门档案，`PostcardComposerView.vue` 接管明信片书写，`NightWatchPanel.vue` / `NightWatchView.vue` 接管守夜面板与塔防棋盘（引擎在 `nightwatch.js`）；状态机仍在纯 JS。

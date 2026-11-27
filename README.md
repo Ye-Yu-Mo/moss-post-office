@@ -4,6 +4,7 @@
 
 ![苔藓邮局](docs/screenshot.webp)
 
+- 交互：房间式导航（邮局 / 镇口 / 邮路 / 守夜），hash 路由，核心玩法不再用弹窗承载
 - 前端：Vite + Vue 3（镇口 / 账号 / 订单 / 邮册 / 月亮 / 工坊 / 远行 / 守夜 / 选种 / 好友后院 / 行前准备 / 事件 / 串门 / 明信片 / 确认弹窗已迁移，盖戳台仍为原生）+ 原生 DOM/CSS + PixiJS 环境粒子（`web/`）
 - 后端：Rust + axum + SQLite，只做账号、云存档和事件（`server/`）
 - 线上 <http://47.92.150.181:17321/>：`serve.py` 同源反代 `/api` 到本机 17322
@@ -34,6 +35,15 @@ npm run dev             # http://127.0.0.1:5173/
 npm run build           # 输出 dist/
 python3 serve.py 17321  # 只服务 dist/，带 CSP 和 ETag
 ```
+
+房间交互 QA（需要本机 Chrome 和本地后端在跑）：
+
+```bash
+npm run qa
+# 或 MOSS_QA_BASE=http://47.92.150.181:17321 npm run qa
+```
+
+详见 [`qa/README.md`](qa/README.md)。
 
 单文件离线版（内联脚本、样式和图片）：
 
