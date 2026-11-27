@@ -4,6 +4,8 @@ import { mountTown, unmountTown } from "./ui/mountTown.js";
 import { mountAccount, unmountAccount } from "./ui/mountAccount.js";
 import { mountOrders, unmountOrders } from "./ui/mountOrders.js";
 import { setOrdersSnapshot } from "./ui/ordersStore.js";
+import { mountAlbum, unmountAlbum } from "./ui/mountAlbum.js";
+import { setAlbumSnapshot } from "./ui/albumStore.js";
 
 (() => {
   "use strict";
@@ -1190,6 +1192,7 @@ import { setOrdersSnapshot } from "./ui/ordersStore.js";
   let dispatchBuilt = false;
   let dispatchUi = null;
   let lastOrdersSignature = "";
+  let lastAlbumSignature = "";
 
   const shopUi = new Map();
   const upgradeUi = new Map();
@@ -2383,124 +2386,94 @@ import { setOrdersSnapshot } from "./ui/ordersStore.js";
     return Math.round((achievementMultiplier() - 1) * 100);
   }
 
+  function albumSnapshot() {
+    const achievements = ACHIEVEMENTS.map((achievement) => {
+      const done = achievementSet.has(achievement.id);
+      const value = Math.min(achievement.target, achievement.value());
+      return {
+        id: achievement.id,
+        name: achievement.name,
+        desc: achievement.desc,
+        icon: ICONS[achievement.icon],
+        rewardPercent: Math.round(achievement.reward * 100),
+        done,
+        valueText: formatNumber(value),
+        targetText: formatNumber(achievement.target),
+        progress: Math.round(completionPercent(value, achievement.target) * 10) / 10
+      };
+    });
+
+    const postcardSets = TOWN_SETS.map((set) => {
+      const entries = set.bots.map((botId) =>
+        state.postcardAlbum.find((item) => item.senderId === botId)
+      );
+      const count = entries.filter(Boolean).length;
+      const medal = collectibleFor("medal", set.id);
+      return {
+        id: set.id,
+        name: set.name,
+        complete: count === set.bots.length,
+        count,
+        total: set.bots.length,
+        rewarded: state.postcardSetRewards.includes(set.id),
+        medalText: medal ? `徽章 #${medal.serial} / ${medal.edition} · ` : "",
+        bots: set.bots.map((botId, index) => {
+          const bot = TOWN_BOTS.find((candidate) => candidate.id === botId);
+          const entry = entries[index];
+          const collectible = collectibleFor("postcard", botId);
+          const iconName = {
+            b_moss: "letter",
+            b_snail: "fern",
+            b_plane: "plane",
+            b_night: "star",
+            b_mushroom: "mushroom",
+            b_box: "mailbox",
+            b_star: "star",
+            b_boat: "boat"
+          }[botId] || "letter";
+          return {
+            id: botId,
+            name: bot ? bot.name : botId,
+            title: bot ? bot.title : "",
+            icon: ICONS[iconName],
+            collected: Boolean(entry),
+            text: entry ? entry.text || "已经收进邮册。" : "",
+            serialText: collectible ? `#${collectible.serial} / ${collectible.edition}` : ""
+          };
+        })
+      };
+    });
+
+    return {
+      collected: state.achievements.length,
+      total: ACHIEVEMENTS.length,
+      bonusPercent: achievementBonusPercent(),
+      fillPercent: Math.round(completionPercent(state.achievements.length, ACHIEVEMENTS.length) * 10) / 10,
+      achievements,
+      postcardCount: state.postcardAlbum.length,
+      postcardTotal: TOWN_BOTS.length,
+      postcardComplete: state.postcardAlbumReward,
+      postcardSets
+    };
+  }
+
   function buildAlbumPanel() {
     albumBuilt = true;
-    albumUi.clear();
-    const collected = state.achievements.length;
-    els.panelBody.innerHTML = `
-      <div class="album-summary">
-        <div class="album-summary-top">
-          <span class="album-summary-title" id="albumCount">已贴 ${collected} / ${ACHIEVEMENTS.length} 枚</span>
-          <span class="album-summary-bonus" id="albumBonus">全局 +${achievementBonusPercent()}%</span>
-        </div>
-        <p>每贴上一枚纪念邮票，所有产出都会更丰厚一点。盖戳、招人、出远门，都会留下小小的邮戳。</p>
-        <div class="album-bar"><span class="album-fill" id="albumFill"></span></div>
-      </div>
-      <div class="album-grid">
-        ${ACHIEVEMENTS.map((achievement) => {
-          const done = achievementSet.has(achievement.id);
-          const value = Math.min(achievement.target, achievement.value());
-          const progress = completionPercent(value, achievement.target);
-          return `
-            <article class="album-stamp${done ? " collected" : ""}" data-achievement="${achievement.id}" aria-label="${achievement.name}，${achievement.desc}，奖励全局产出 +${Math.round(achievement.reward * 100)}%">
-              <div class="album-stamp-top">
-                <span class="album-art" aria-hidden="true">${ICONS[achievement.icon]}</span>
-                <span class="album-reward">+${Math.round(achievement.reward * 100)}%</span>
-              </div>
-              <div class="album-name">${achievement.name}</div>
-              <p class="album-desc">${achievement.desc}</p>
-              <div class="album-progress">
-                <span data-album-progress>${done ? "已贴进邮册" : `${formatNumber(value)} / ${formatNumber(achievement.target)}`}</span>
-                <span class="album-mini-bar" data-album-bar${done ? " hidden" : ""}><span class="album-mini-fill" style="width:${progress}%"></span></span>
-              </div>
-            </article>`;
-        }).join("")}
-      </div>
-      <section class="postcard-album">
-        <div class="tree-head">
-          <span>镇口明信片</span>
-          <span>${state.postcardAlbum.length} / ${TOWN_BOTS.length}${state.postcardAlbumReward ? " · 已集齐" : ""}</span>
-        </div>
-        <p class="tree-note">四套明信片，每套 2 位邮差。集齐一套 +1 墨点 +1 材料；8 张全收集再留 1 枚月光邮戳。</p>
-        ${TOWN_SETS.map((set) => {
-          const entries = set.bots.map((botId) =>
-            state.postcardAlbum.find((item) => item.senderId === botId)
-          );
-          const count = entries.filter(Boolean).length;
-          const rewarded = state.postcardSetRewards.includes(set.id);
-          const medal = collectibleFor("medal", set.id);
-          return `
-            <div class="postcard-set${count === set.bots.length ? " is-complete" : ""}">
-              <div class="postcard-set-head">
-                <b>${set.name}</b>
-                <span>${medal ? `徽章 #${medal.serial} / ${medal.edition} · ` : ""}${count} / ${set.bots.length}${rewarded ? " · 已领" : count === set.bots.length ? " · 已集齐" : ""}</span>
-              </div>
-              <div class="postcard-grid">
-                ${set.bots.map((botId, index) => {
-                  const bot = TOWN_BOTS.find((candidate) => candidate.id === botId);
-                  const entry = entries[index];
-                  const collectible = collectibleFor("postcard", botId);
-                  return `
-                    <article class="postcard-slot${entry ? " is-collected" : ""}">
-                      ${entry ? `<span class="postcard-art postcard-art-icon" aria-hidden="true">${ICONS[{
-                        b_moss: "letter", b_snail: "fern", b_plane: "plane", b_night: "star",
-                        b_mushroom: "mushroom", b_box: "mailbox", b_star: "star", b_boat: "boat"
-                      }[botId] || "letter"]}</span>` : ""}
-                      <div class="postcard-slot-top">
-                        <b>${bot ? bot.name : botId}</b>
-                        <span>${collectible ? `#${collectible.serial} / ${collectible.edition}` : bot ? bot.title : ""}</span>
-                      </div>
-                      <p>${entry ? escapeHtml(entry.text || "已经收进邮册。") : "还没收到这位邮差的明信片。"}</p>
-                      <small>${entry ? "已收进邮册" : "去镇口寄一张"}</small>
-                    </article>`;
-                }).join("")}
-              </div>
-            </div>`;
-        }).join("")}
-      </section>
-    `;
-
-    albumUi.summary = els.panelBody.querySelector(".album-summary");
-    albumUi.count = document.getElementById("albumCount");
-    albumUi.bonus = document.getElementById("albumBonus");
-    albumUi.fill = document.getElementById("albumFill");
-    albumUi.cards = new Map();
-    ACHIEVEMENTS.forEach((achievement) => {
-      const card = els.panelBody.querySelector(`[data-achievement="${achievement.id}"]`);
-      if (!card) return;
-      albumUi.cards.set(achievement.id, {
-        card,
-        progress: card.querySelector("[data-album-progress]"),
-        bar: card.querySelector("[data-album-bar]"),
-        fill: card.querySelector(".album-mini-fill")
-      });
-    });
-    refreshAlbumUi();
+    unmountAlbum();
+    els.panelBody.innerHTML = `<div data-album-root></div>`;
+    mountAlbum(els.panelBody.querySelector("[data-album-root]"));
+    const next = albumSnapshot();
+    lastAlbumSignature = JSON.stringify(next);
+    setAlbumSnapshot(next);
   }
 
   function refreshAlbumUi() {
-    if (!albumBuilt || !albumUi.cards) return;
-    const collected = state.achievements.length;
-    setText(albumUi.count, `已贴 ${collected} / ${ACHIEVEMENTS.length} 枚`);
-    setText(albumUi.bonus, `全局 +${achievementBonusPercent()}%`);
-    albumUi.fill.style.width = `${Math.round(completionPercent(collected, ACHIEVEMENTS.length) * 10) / 10}%`;
-
-    ACHIEVEMENTS.forEach((achievement) => {
-      const ui = albumUi.cards.get(achievement.id);
-      if (!ui) return;
-      const done = achievementSet.has(achievement.id);
-      const value = Math.min(achievement.target, achievement.value());
-      const progress = completionPercent(value, achievement.target);
-      ui.card.classList.toggle("collected", done);
-      if (done) {
-        setText(ui.progress, "已贴进邮册");
-        setHidden(ui.bar, true);
-      } else {
-        setText(ui.progress, `${formatNumber(value)} / ${formatNumber(achievement.target)}`);
-        setHidden(ui.bar, false);
-        ui.fill.style.width = `${Math.round(progress * 10) / 10}%`;
-      }
-    });
+    if (!state || activeTab !== "album") return;
+    const next = albumSnapshot();
+    const signature = JSON.stringify(next);
+    if (signature === lastAlbumSignature) return;
+    lastAlbumSignature = signature;
+    setAlbumSnapshot(next);
   }
 
   function checkAchievements(options = {}) {
@@ -4629,6 +4602,7 @@ import { setOrdersSnapshot } from "./ui/ordersStore.js";
     if (els.panelEyebrow) els.panelEyebrow.textContent = TAB_EYEBROWS[name];
     els.buySwitch.hidden = name !== "posties";
     if (name !== "orders") unmountOrders();
+    if (name !== "album") unmountAlbum();
 
     if (name === "posties") {
       buildShopPanel();
