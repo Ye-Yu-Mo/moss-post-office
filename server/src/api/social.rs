@@ -198,24 +198,16 @@ pub async fn send_postcard(
     }
 
     let created_at = now();
-    let sent = state
-        .db
-        .count_postcards_sent_since(user_id.clone(), created_at - 86_400)
-        .await?;
-    if sent >= MAX_POSTCARDS_PER_DAY {
-        return Err(ApiError::BadRequest("daily postcard limit reached"));
-    }
-
-    match request.recipient_kind.as_str() {
+    let (recipient_kind, cards, reply) = match request.recipient_kind.as_str() {
         "user" => {
             if !state.db.user_exists(recipient_id.clone()).await? {
                 return Err(ApiError::NotFound("recipient"));
             }
-            state
-                .db
-                .insert_postcard(crate::db::NewPostcard {
+            (
+                "user",
+                vec![crate::db::NewPostcard {
                     sender_id: user_id.clone(),
-                    sender_name: user_name,
+                    sender_name: user_name.clone(),
                     sender_kind: "user".into(),
                     recipient_id,
                     template: template.into(),
@@ -223,22 +215,18 @@ pub async fn send_postcard(
                     gift_amount: 0,
                     created_at,
                     arrives_at: created_at,
-                })
-                .await?;
-            state
-                .db
-                .record_postcard_send(user_id, "user".into(), created_at)
-                .await?;
-            Ok(Json(json!({ "ok": true, "reply": false })))
+                }],
+                false,
+            )
         }
         "bot" => {
             let Some(bot) = state.db.bot_by_id(recipient_id.clone()).await? else {
                 return Err(ApiError::NotFound("bot"));
             };
             let (gift_kind, gift_amount) = bot_gift(&bot.id);
-            state
-                .db
-                .insert_postcard(crate::db::NewPostcard {
+            (
+                "bot",
+                vec![crate::db::NewPostcard {
                     sender_id: bot.id,
                     sender_name: bot.name,
                     sender_kind: "bot".into(),
@@ -248,16 +236,28 @@ pub async fn send_postcard(
                     gift_amount,
                     created_at,
                     arrives_at: created_at,
-                })
-                .await?;
-            state
-                .db
-                .record_postcard_send(user_id, "bot".into(), created_at)
-                .await?;
-            Ok(Json(json!({ "ok": true, "reply": true })))
+                }],
+                true,
+            )
         }
-        _ => Err(ApiError::BadRequest("invalid recipient_kind")),
+        _ => return Err(ApiError::BadRequest("invalid recipient_kind")),
+    };
+
+    let sent = state
+        .db
+        .send_postcards_with_limit(
+            user_id,
+            recipient_kind.into(),
+            cards,
+            MAX_POSTCARDS_PER_DAY,
+            created_at - 86_400,
+            created_at,
+        )
+        .await?;
+    if !sent {
+        return Err(ApiError::BadRequest("daily postcard limit reached"));
     }
+    Ok(Json(json!({ "ok": true, "reply": reply })))
 }
 
 pub async fn claim_postcard(

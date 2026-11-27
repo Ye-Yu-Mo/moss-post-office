@@ -91,7 +91,7 @@
         <span>{{ ownedMedals }} / {{ snapshot.nightMedals.length }}</span>
       </div>
       <p class="tree-note">
-        守住第 5 / 10 / 15 夜，邮局会签发一枚有编号的纪念戳。登录后记进邮册，转生不会清空。
+        守住第 5 / 10 / 15 夜，以及深雾第 20 / 25 / 30 夜，邮局会签发一枚有编号的纪念戳。登录后记进邮册，转生不会清空。
       </p>
       <div class="night-medal-grid">
         <article

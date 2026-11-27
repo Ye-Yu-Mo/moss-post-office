@@ -65,6 +65,7 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
   "use strict";
 
   const SAVE_KEY = "moss-post-office.save.v1";
+  const SAVE_OWNER_KEY = "moss-post-office.owner.v1";
   const PRESTIGE_BASE = 30000;
   const MOON_BONUS = 0.25;
   const MAX_OFFLINE_SECONDS = 2 * 60 * 60;
@@ -1214,6 +1215,7 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
     modalBody: document.getElementById("modalBody"),
     modalConfirm: document.getElementById("modalConfirm"),
     modalCancel: document.getElementById("modalCancel"),
+    modalClose: document.getElementById("modalClose"),
     quickStamps: document.getElementById("quickStamps"),
     quickRate: document.getElementById("quickRate"),
     quickGain: document.getElementById("quickGain"),
@@ -1227,6 +1229,7 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
   let state = null;
   let booted = false;
   let activeTab = "posties";
+  let lastRerollAt = 0;
   let activeRoom = "hall";
   let roomView = { routes: "panel", night: "panel" };
   let townView = "main";
@@ -1259,6 +1262,8 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
   let cloudPushTimer = 0;
   let cloudPushing = false;
   let suppressSaves = false;
+  let localSaveProblem = false;
+  let cloudRecoveryPending = false;
   let townData = null;
   let townLoading = false;
   let townError = "";
@@ -1605,9 +1610,35 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
   function readSave() {
     try {
       const raw = window.localStorage.getItem(SAVE_KEY);
-      return raw ? JSON.parse(raw) : null;
+      if (!raw) {
+        localSaveProblem = true;
+        return null;
+      }
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") {
+        localSaveProblem = true;
+        return null;
+      }
+      return parsed;
     } catch (error) {
+      localSaveProblem = true;
       return null;
+    }
+  }
+
+  function readSaveOwner() {
+    try {
+      return String(window.localStorage.getItem(SAVE_OWNER_KEY) || "");
+    } catch (error) {
+      return "";
+    }
+  }
+
+  function writeSaveOwner(userId) {
+    try {
+      if (userId) window.localStorage.setItem(SAVE_OWNER_KEY, String(userId));
+    } catch (error) {
+      /* storage may be unavailable */
     }
   }
 
@@ -2955,7 +2986,8 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
   }
 
   function refreshDispatchUi() {
-    if (!dispatchBuilt || !dispatchUi || activeTab !== "dispatch") return;
+    if (!dispatchBuilt || !dispatchUi) return;
+    if (activeRoom !== "routes" || roomView.routes !== "panel") return;
     const free = freeDispatchSlots();
     setText(dispatchUi.freeNote, `${free} / ${dispatchSlots()} 位空闲`);
     dispatchUi.pips.forEach((pip, index) => {
@@ -3032,13 +3064,16 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
     showToast(`邮差沿着${route.name}出发了，约 ${formatTripDuration(duration)}后回来。`, 3200);
 
     if (restoreFocus) {
-      const button = pane.querySelector(`[data-route-start="${route.id}"]`);
+      const button = dispatchPane()?.querySelector(`[data-route-start="${route.id}"]`);
       if (button && !button.disabled) {
         button.focus({ preventScroll: true });
       } else {
         const nextButton = dispatchPane()?.querySelector(".route-btn:not(:disabled)");
-        if (nextButton) nextButton.focus({ preventScroll: true });
-        else els.tabs.find((tab) => tab.dataset.tab === "dispatch")?.focus({ preventScroll: true });
+        if (nextButton) {
+          nextButton.focus({ preventScroll: true });
+        } else {
+          roomEls.routesHost?.querySelector("[data-room-back]")?.focus({ preventScroll: true });
+        }
       }
     }
   }
@@ -3311,11 +3346,14 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
   }
 
   function rerollOffers(restoreFocus = false) {
+    const now = Date.now();
+    if (now - lastRerollAt < 400) return;
     if (!spendInk(INK_REROLL_COST)) {
       playDenySound();
       showToast(`换一批要 ${INK_REROLL_COST} 墨点，先去盖几个完美邮戳吧。`, 3000);
       return;
     }
+    lastRerollAt = now;
     state.offers = [];
     ensureOffers();
     saveGame();
@@ -4663,7 +4701,7 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
     saveGame();
     refreshLive();
     roomView.routes = "panel";
-    renderRoutesPanel();
+    navigateRoom("hall");
   }
 
   function restartExpedition() {
@@ -4727,6 +4765,18 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
           ? `让夜班邮车发车，获得 ${gain} 枚月光邮戳`
           : "邮票还不够，夜班邮车尚未发车"
     };
+  }
+
+  const gardenBusy = new Set();
+
+  async function guardGarden(key, action) {
+    if (gardenBusy.has(key)) return;
+    gardenBusy.add(key);
+    try {
+      await action();
+    } finally {
+      gardenBusy.delete(key);
+    }
   }
 
   let nightEngine = null;
@@ -4994,6 +5044,16 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
   }
 
   function closeNightBattle() {
+    if (
+      nightEngine &&
+      (nightEngine.phase === "running" || nightEngine.phase === "break") &&
+      !nightEngine.snapshot().paused
+    ) {
+      nightEngine.togglePause();
+      pushNightSnapshot();
+      showToast("先暂停了。再点一次「回守夜」才会放弃这一夜。", 3600);
+      return;
+    }
     unmountNightWatch();
     stopNightClock();
     nightEngine = null;
@@ -5063,7 +5123,7 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
     });
     pushNightSnapshot();
     nightTimer = window.setInterval(() => {
-      if (!nightEngine || document.hidden || els.modal.hidden) return;
+      if (!nightEngine || document.hidden || !els.modal.hidden) return;
       nightEngine.tick(0.07);
       pushNightSnapshot();
     }, 70);
@@ -5237,25 +5297,33 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
   }
 
   function roomNavItems() {
+    const townBadge = townUnread ? Math.min(townUnread, 9) : 0;
+    const routeBadge =
+      state && state.readyTrips.length ? Math.min(state.readyTrips.length, 9) : 0;
+    const nightBadge =
+      state && state.nightWatch.points ? Math.min(state.nightWatch.points, 9) : 0;
     return [
-      { id: "hall", label: "邮局", icon: ICONS.letter },
+      { id: "hall", label: "邮局", icon: ICONS.letter, badge: 0, ariaLabel: "邮局" },
       {
         id: "town",
         label: "镇口",
         icon: ICONS.mailbox,
-        badge: townUnread ? Math.min(townUnread, 9) : 0
+        badge: townBadge,
+        ariaLabel: townBadge ? `镇口，${townBadge} 条新消息` : "镇口"
       },
       {
         id: "routes",
         label: "邮路",
         icon: ICONS.plane,
-        badge: state && state.readyTrips.length ? Math.min(state.readyTrips.length, 9) : 0
+        badge: routeBadge,
+        ariaLabel: routeBadge ? `邮路，${routeBadge} 个邮袋待取` : "邮路"
       },
       {
         id: "night",
         label: "守夜",
         icon: ICONS.star,
-        badge: state && state.nightWatch.points ? Math.min(state.nightWatch.points, 9) : 0
+        badge: nightBadge,
+        ariaLabel: nightBadge ? `守夜，${nightBadge} 点天赋待分配` : "守夜"
       }
     ];
   }
@@ -6284,6 +6352,7 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
     els.modalCancel.hidden = options.showCancel === false;
     const actions = els.modal.querySelector(".modal-actions");
     if (actions) actions.hidden = options.footer === false;
+    if (els.modalClose) els.modalClose.hidden = options.footer !== false;
     const card = els.modal.querySelector(".modal-card");
     if (card) card.classList.toggle("is-wide", options.wide === true);
     els.modal.hidden = false;
@@ -6373,7 +6442,7 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
       "攒够 30,000 张邮票，夜班邮车会带来月光邮戳。用邮戳点亮月光树：每 1 点全局 +10%，节点永久保留；每程还能选一个夜班契约。",
       "集邮册会记录特别的小事。每贴上一枚纪念邮票，所有产出永久再多一点。",
       "偶尔会飘来闪光的信。离开时小邮差仍会送信，收益默认按一半计算，最多两小时；月光树能延长它。",
-      "邮册会自动合上并保存。手机端底部的快捷蜡封固定算“不错 ×1.5”，不参与完美判定。",
+      "邮册会自动合上并保存。手机端直接点舞台上的大蜡封即可；没有额外的快捷盖戳入口。",
       "邮路还能延伸到雾湖之外：随机地图、邮差牌、信件与干粮。失败只丢这一趟，奖励和月光邮戳会回流邮局。"
     ];
     openInfoModal({
@@ -6474,6 +6543,22 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
     );
   }
 
+  function resetLocalForNewOwner() {
+    const keepSound = state.sound;
+    state = createInitialState(keepSound);
+    ownedUpgradeSet = new Set();
+    achievementSet = new Set();
+    goalsDoneSet = new Set();
+    unseenAchievements = 0;
+    combo = 0;
+    comboTimer = 0;
+    stampAnchor = performance.now();
+    ensureOffers();
+    updateGoals();
+    refreshLive();
+    saveGame();
+  }
+
   function resetGame() {
     if (!state) return;
     const keepSound = state.sound;
@@ -6547,6 +6632,12 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
     }
     if (error && /request already pending/i.test(error.message || "")) {
       return "已经发过申请了，等对方接受。";
+    }
+    if (error && /cannot add yourself/i.test(error.message || "")) {
+      return "不能加自己。";
+    }
+    if (error && error.status >= 500) {
+      return "邮局服务器有点忙，稍后再试。";
     }
     if (error && /quest is not ready/i.test(error.message || "")) {
       return "还没收到这份菜，先种再收。";
@@ -6683,6 +6774,7 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
   function initCloud() {
     account = cloudApi.loadAccount();
     if (account) accountBaseDraft = account.base;
+    if (account && account.token && !readSaveOwner()) writeSaveOwner(account.userId);
     refreshAccountButton();
     if (account && account.token) {
       setTimeout(() => {
@@ -6698,6 +6790,22 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
       const info = await cloudApi.me(account);
       if (info && info.username) account.username = info.username;
       const remote = await cloudApi.pull(account);
+      if (cloudRecoveryPending) {
+        if (remote && remote.payload && typeof remote.payload === "object") {
+          cloudRecoveryPending = false;
+          suppressSaves = false;
+          account.revision = remote.revision;
+          account.dirty = false;
+          account.conflict = 0;
+          cloudApi.saveAccount(account);
+          showToast("本地存档读不出来，已从云端恢复。", 6000);
+          applyRemoteSave(remote.payload);
+          return;
+        }
+        cloudRecoveryPending = false;
+        suppressSaves = false;
+        showToast("本地存档读不出来，云端也没有备份，只能从新开始。", 7000);
+      }
       if (!remote) {
         account.revision = 0;
         account.dirty = true;
@@ -6757,6 +6865,8 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
     try {
       const verifier = await deriveVerifier(username, password);
       if (mode === "register") {
+        const resetForNewOwner = Boolean(readSaveOwner());
+        if (resetForNewOwner) resetLocalForNewOwner();
         const result = await cloudApi.register({
           base,
           username,
@@ -6773,12 +6883,18 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
           conflict: 0
         };
         cloudApi.saveAccount(account);
+        writeSaveOwner(result.user_id);
         refreshAccountButton();
         renderAccountModal();
         flushNightMedals();
         if (activeRoom === "town") loadTown();
         else prefetchTown();
-        showToast("账号建好了，本地存档已经一起寄上去。", 4600);
+        showToast(
+          resetForNewOwner
+            ? "账号建好了，换上了一本新的邮册。"
+            : "账号建好了，本地存档已经一起寄上去。",
+          4600
+        );
         return { ok: true };
       }
 
@@ -6798,6 +6914,7 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
         dirty: false,
         conflict: 0
       };
+      writeSaveOwner(pending.userId);
       const remote = await cloudApi.pull(pending);
       if (remote) {
         pending.revision = remote.revision;
@@ -6847,6 +6964,22 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
     showToast("正在读取云端存档…", 1600);
     try {
       const remote = await cloudApi.pull(account);
+      if (cloudRecoveryPending) {
+        if (remote && remote.payload && typeof remote.payload === "object") {
+          cloudRecoveryPending = false;
+          suppressSaves = false;
+          account.revision = remote.revision;
+          account.dirty = false;
+          account.conflict = 0;
+          cloudApi.saveAccount(account);
+          showToast("本地存档读不出来，已从云端恢复。", 6000);
+          applyRemoteSave(remote.payload);
+          return;
+        }
+        cloudRecoveryPending = false;
+        suppressSaves = false;
+        showToast("本地存档读不出来，云端也没有备份，只能从新开始。", 7000);
+      }
       if (!remote) {
         showToast("云端没有存档。", 2800);
         return;
@@ -6928,6 +7061,16 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
   async function flushNightMedals() {
     if (!state || !account || !account.token) return;
     if (!state.nightWatch.pendingMedals.length) return;
+    for (let attempt = 0; attempt < 12 && cloudPushing; attempt += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, 120));
+    }
+    if (account.dirty && !cloudPushing && !account.conflict) {
+      try {
+        await cloudPushNow();
+      } catch (error) {
+        /* keep pending medals and retry later */
+      }
+    }
     for (const level of [...state.nightWatch.pendingMedals]) {
       try {
         const result = await cloudApi.claimNightWatch(account, level);
@@ -7028,78 +7171,90 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
   }
 
   async function claimDailyGardenQuest() {
-    if (!account || !account.token) return;
-    try {
-      const result = await cloudApi.claimGardenQuest(account);
-      const reward = result.reward || {};
-      if (reward.kind === "stamps") addStamps(reward.amount);
-      else if (reward.kind === "paper") {
-        state.materials.paper = Math.min(99, (state.materials.paper || 0) + reward.amount);
-      } else if (reward.kind === "ink") addInk(reward.amount);
-      saveGame();
-      refreshLive();
-      showToast(`柜台收下了菜，给你 ${reward.kind === "stamps" ? `邮票×${formatNumber(reward.amount)}` : reward.kind === "paper" ? `纸×${reward.amount}` : `墨点×${reward.amount}`}。`, 3600);
-      await loadTown();
-    } catch (error) {
-      showToast(cloudErrorMessage(error), 3200);
-    }
+    return guardGarden("quest", async () => {
+      if (!account || !account.token) return;
+      try {
+        const result = await cloudApi.claimGardenQuest(account);
+        const reward = result.reward || {};
+        if (reward.kind === "stamps") addStamps(reward.amount);
+        else if (reward.kind === "paper") {
+          state.materials.paper = Math.min(99, (state.materials.paper || 0) + reward.amount);
+        } else if (reward.kind === "ink") addInk(reward.amount);
+        saveGame();
+        refreshLive();
+        showToast(`柜台收下了菜，给你 ${reward.kind === "stamps" ? `邮票×${formatNumber(reward.amount)}` : reward.kind === "paper" ? `纸×${reward.amount}` : `墨点×${reward.amount}`}。`, 3600);
+        await loadTown();
+      } catch (error) {
+        showToast(cloudErrorMessage(error), 3200);
+      }
+    });
   }
 
   async function plantGardenPlot(plot, crop) {
-    if (!account || !account.token) return;
-    try {
-      await cloudApi.plantPlot(account, plot, crop);
-      showToast(`种下了${GARDEN_CROP_NAMES[crop] || "种子"}。`, 2800);
-      openTown();
-    } catch (error) {
-      showToast(cloudErrorMessage(error), 3200);
-    }
+    return guardGarden(`plant:${plot}`, async () => {
+      if (!account || !account.token) return;
+      try {
+        await cloudApi.plantPlot(account, plot, crop);
+        showToast(`种下了${GARDEN_CROP_NAMES[crop] || "种子"}。`, 2800);
+        openTown();
+      } catch (error) {
+        showToast(cloudErrorMessage(error), 3200);
+      }
+    });
   }
 
   async function waterGardenPlot(plot) {
-    if (!account || !account.token) return;
-    try {
-      await cloudApi.waterPlot(account, plot);
-      showToast("浇了水，成熟时间缩短了 25%。", 3000);
-      await loadTown();
-    } catch (error) {
-      showToast(cloudErrorMessage(error), 3200);
-    }
+    return guardGarden(`water:${plot}`, async () => {
+      if (!account || !account.token) return;
+      try {
+        await cloudApi.waterPlot(account, plot);
+        showToast("浇了水，成熟时间缩短了 25%。", 3000);
+        await loadTown();
+      } catch (error) {
+        showToast(cloudErrorMessage(error), 3200);
+      }
+    });
   }
 
   async function harvestGardenPlot(plot) {
-    if (!account || !account.token) return;
-    try {
-      const result = await cloudApi.harvestPlot(account, plot);
-      applyGardenReward(result.reward);
-      showToast(`收下了 ${gardenRewardText(result.reward)}。`, 3400);
-      await loadTown();
-    } catch (error) {
-      showToast(cloudErrorMessage(error), 3200);
-    }
+    return guardGarden(`harvest:${plot}`, async () => {
+      if (!account || !account.token) return;
+      try {
+        const result = await cloudApi.harvestPlot(account, plot);
+        applyGardenReward(result.reward);
+        showToast(`收下了 ${gardenRewardText(result.reward)}。`, 3400);
+        await loadTown();
+      } catch (error) {
+        showToast(cloudErrorMessage(error), 3200);
+      }
+    });
   }
 
   async function helpGardenPlot(ownerId, plot) {
-    if (!account || !account.token) return;
-    try {
-      await cloudApi.helpPlot(account, ownerId, plot);
-      showToast("帮对方浇了水，成熟时间缩短了 25%。", 3200);
-      await openGardenModal(ownerId);
-    } catch (error) {
-      showToast(cloudErrorMessage(error), 3200);
-    }
+    return guardGarden(`help:${ownerId}:${plot}`, async () => {
+      if (!account || !account.token) return;
+      try {
+        await cloudApi.helpPlot(account, ownerId, plot);
+        showToast("帮对方浇了水，成熟时间缩短了 25%。", 3200);
+        await openGardenModal(ownerId);
+      } catch (error) {
+        showToast(cloudErrorMessage(error), 3200);
+      }
+    });
   }
 
   async function stealGardenPlot(ownerId, plot) {
-    if (!account || !account.token) return;
-    try {
-      const result = await cloudApi.stealPlot(account, ownerId, plot);
-      applyGardenReward(result.reward);
-      showToast(`偷到了 ${gardenRewardText(result.reward)}。`, 3400);
-      await openGardenModal(ownerId);
-    } catch (error) {
-      showToast(cloudErrorMessage(error), 3200);
-    }
+    return guardGarden(`steal:${ownerId}:${plot}`, async () => {
+      if (!account || !account.token) return;
+      try {
+        const result = await cloudApi.stealPlot(account, ownerId, plot);
+        applyGardenReward(result.reward);
+        showToast(`偷到了 ${gardenRewardText(result.reward)}。`, 3400);
+        await openGardenModal(ownerId);
+      } catch (error) {
+        showToast(cloudErrorMessage(error), 3200);
+      }
+    });
   }
 
   function friendGardenSnapshot(garden, ownerId) {
@@ -7566,7 +7721,8 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
       const replied = Boolean(result && result.reply);
       showToast(replied ? "明信片寄到了，对方回了一张。" : "明信片已经寄到镇口。", 3600);
       postcardTarget = null;
-      openTown();
+      townView = "main";
+      loadTown();
     } catch (error) {
       setPostcardComposerSnapshot(
         postcardComposerSnapshot({
@@ -7862,6 +8018,7 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
     if (els.townBtn) els.townBtn.addEventListener("click", () => navigateRoom("town"));
 
     els.modalCancel.addEventListener("click", closeModal);
+    if (els.modalClose) els.modalClose.addEventListener("click", closeModal);
     els.modalConfirm.addEventListener("click", () => {
       const action = modalAction;
       closeModal();
@@ -7995,6 +8152,16 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
         ? data
         : null;
     const raw = fromHot || readSave();
+    const earlyAccount = cloudApi.loadAccount();
+    if (
+      localSaveProblem &&
+      !fromHot &&
+      earlyAccount &&
+      earlyAccount.token
+    ) {
+      cloudRecoveryPending = true;
+      suppressSaves = true;
+    }
 
     state = normalizeState(raw);
     const bootAway = raw ? Math.max(0, (Date.now() - state.lastSeen) / 1000) : 0;

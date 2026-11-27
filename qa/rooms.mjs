@@ -95,6 +95,20 @@ async function main() {
     check(`hall tab ${tab} renders`, text.includes(marker), text.slice(0, 20));
   }
 
+  await page.evaluate(() => {
+    window.__moss.state().ink = 100;
+  });
+  await page.click('[data-tab="orders"]');
+  await page.waitForTimeout(300);
+  const inkBefore = await page.evaluate(() => window.__moss.state().ink);
+  const reroll = page.locator(".order-reroll").first();
+  if (await reroll.count()) {
+    await reroll.dblclick();
+    await page.waitForTimeout(450);
+    const inkAfter = await page.evaluate(() => window.__moss.state().ink);
+    check("double-click reroll charges once", inkBefore - inkAfter === 8, `${inkBefore} -> ${inkAfter}`);
+  }
+
   await page.locator(".room-btn", { hasText: "镇口" }).click();
   await page.waitForTimeout(400);
   check("town room opens", await room("town").isVisible());
@@ -131,15 +145,26 @@ async function main() {
     await page.waitForTimeout(600);
     check("postcard composer is a town view", (await room("town").locator(".town-template").count()) > 0);
     check("postcard composer is not a modal", await page.locator("#modal").isHidden());
-    await room("town").locator("[data-town-back]").click();
-    await page.waitForTimeout(600);
-    check("town returns from composer", (await room("town").locator(".friend-code-row").count()) > 0);
+    await room("town").locator(".town-template").first().click();
+    await page.waitForTimeout(1600);
+    check(
+      "postcard send returns to town",
+      (await room("town").locator(".friend-code-row").count()) > 0 &&
+        (await room("town").locator(".town-composer").count()) === 0
+    );
   }
 
   const friendCode = (await room("town").locator(".friend-code-row b").innerText()).trim();
   const friendUser = `qb_${Date.now().toString().slice(-8)}`;
+  await page.evaluate(() => {
+    window.__moss.state().stamps = 55555;
+    const raw = JSON.parse(localStorage.getItem("moss-post-office.save.v1") || "{}");
+    raw.stamps = 55555;
+    localStorage.setItem("moss-post-office.save.v1", JSON.stringify(raw));
+  });
   await logoutViaDialog(page);
   await registerViaDialog(page, friendUser);
+  check("new account does not inherit old save", (await page.evaluate(() => window.__moss.state().stamps)) < 1000);
   await page.locator(".room-btn", { hasText: "镇口" }).click();
   await page.waitForTimeout(1200);
   await room("town").locator("#friendCodeInput").fill(friendCode);
@@ -183,6 +208,10 @@ async function main() {
     await routeButton.click();
     await page.waitForTimeout(500);
     check("dispatch starts a trip", (await room("routes").locator(".trip-card").count()) > 0);
+    const timeOne = await room("routes").locator("[data-trip-time]").first().innerText();
+    await page.waitForTimeout(2500);
+    const timeTwo = await room("routes").locator("[data-trip-time]").first().innerText();
+    check("dispatch countdown ticks", timeOne !== "0:00" && timeOne !== timeTwo, `${timeOne} -> ${timeTwo}`);
   }
 
   await room("routes").locator("[data-expedition-open]").click();
@@ -215,7 +244,7 @@ async function main() {
   check("wave preview lists shadows", (await page.locator(".nw-wave-chip").count()) > 0);
   check("blocked fog cells render", (await page.locator(".nw-cell.is-blocked[disabled]").count()) === 3);
 
-  await page.locator(".nw-overlay .primary-btn").click();
+  await page.locator(".nw-ready-actions .primary-btn").click();
   await page.waitForTimeout(300);
   await page.evaluate(() => window.__moss.nightwatchOil(500));
   await page.evaluate(() => window.__moss.nightwatchPlace("letter", 2, 1));
@@ -228,6 +257,15 @@ async function main() {
     towers: window.__moss.nightwatch().towers.length
   }));
   check("shovel sells a plant", sold.towers === 0 && sold.oil > beforeSell, JSON.stringify(sold));
+  await page.waitForTimeout(3000);
+  const progressed = await page.evaluate(() => {
+    const snap = window.__moss.nightwatch();
+    return { enemies: snap.enemies.length, kills: snap.kills, oil: snap.oil };
+  });
+  check("night battle actually ticks", progressed.enemies > 0 || progressed.kills > 0, JSON.stringify(progressed));
+  await page.locator("[data-room-back='night']").click();
+  await page.waitForTimeout(300);
+  check("night back pauses first", await page.evaluate(() => Boolean(window.__moss.nightwatch()?.paused)));
   await page.locator("[data-room-back='night']").click();
   await page.waitForTimeout(400);
   check("night back returns to panel", (await page.locator(".nw-panel").count()) > 0);

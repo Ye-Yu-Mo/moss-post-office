@@ -43,7 +43,7 @@ npm run qa
 # 或 MOSS_QA_BASE=http://47.92.150.181:17321 npm run qa
 ```
 
-详见 [`qa/README.md`](qa/README.md)。
+`npm run qa:recovery` 验证本地存档损坏时的云端恢复。详见 [`qa/README.md`](qa/README.md)。
 
 单文件离线版（内联脚本、样式和图片）：
 

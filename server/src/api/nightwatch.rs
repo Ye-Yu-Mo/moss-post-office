@@ -32,6 +32,10 @@ pub async fn claim(
     Json(payload): Json<ClaimNightWatch>,
 ) -> Result<Json<Value>, ApiError> {
     let context = require_user(&state, &headers).await?;
+    let best = state.db.night_best(context.user.id.clone()).await?;
+    if best < payload.level {
+        return Err(ApiError::BadRequest("night watch milestone not reached"));
+    }
     let (_, template, edition) = MILESTONES
         .iter()
         .find(|(level, _, _)| *level == payload.level)

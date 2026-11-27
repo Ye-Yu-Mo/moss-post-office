@@ -1,4 +1,4 @@
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{params, OptionalExtension, TransactionBehavior};
 
 use crate::{db::Db, error::ApiError};
 
@@ -219,6 +219,56 @@ impl Db {
                 ],
             )?;
             Ok(())
+        })
+        .await
+    }
+
+    pub async fn send_postcards_with_limit(
+        &self,
+        user_id: String,
+        recipient_kind: String,
+        cards: Vec<NewPostcard>,
+        limit: i64,
+        since: i64,
+        now: i64,
+    ) -> Result<bool, ApiError> {
+        self.call(move |conn| {
+            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            let sent: i64 = tx.query_row(
+                "SELECT COUNT(*) FROM postcard_sends
+                 WHERE user_id = ?1 AND created_at >= ?2",
+                params![user_id, since],
+                |row| row.get(0),
+            )?;
+            if sent >= limit {
+                return Ok(false);
+            }
+            for card in cards {
+                tx.execute(
+                    "INSERT INTO postcards
+                     (sender_id, sender_name, sender_kind, recipient_id, template,
+                      gift_kind, gift_amount, created_at, arrives_at, claimed_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, NULL)",
+                    params![
+                        card.sender_id,
+                        card.sender_name,
+                        card.sender_kind,
+                        card.recipient_id,
+                        card.template,
+                        card.gift_kind,
+                        card.gift_amount,
+                        card.created_at,
+                        card.arrives_at
+                    ],
+                )?;
+            }
+            tx.execute(
+                "INSERT INTO postcard_sends (user_id, recipient_kind, created_at)
+                 VALUES (?1, ?2, ?3)",
+                params![user_id, recipient_kind, now],
+            )?;
+            tx.commit()?;
+            Ok(true)
         })
         .await
     }

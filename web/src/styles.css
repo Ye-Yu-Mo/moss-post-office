@@ -7125,3 +7125,127 @@ h3 {
   background: rgba(159, 150, 199, 0.14);
   color: #5b5285;
 }
+
+/* ready planning without covering the board */
+.nw-ready-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 9px 12px;
+  border-radius: 12px;
+  background: rgba(34, 54, 40, 0.92);
+  color: #f6f1e2;
+}
+
+.nw-ready-copy {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.nw-ready-copy b {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 400;
+}
+
+.nw-ready-copy span {
+  font-size: 11.5px;
+  color: rgba(246, 241, 226, 0.78);
+}
+
+.nw-ready-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.nw-ready-actions .primary-btn,
+.nw-ready-actions .secondary-btn {
+  width: auto;
+}
+
+.nw-board {
+  width: min(100%, calc(44vh * 1.6));
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* modal close affordance */
+.modal-card {
+  position: relative;
+}
+
+.modal-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.modal-close:hover {
+  background: var(--paper-2);
+}
+
+/* long room titles on narrow screens */
+.room-head {
+  flex-wrap: wrap;
+}
+
+.room-head > div {
+  min-width: 0;
+}
+
+.room-head h2 {
+  overflow-wrap: anywhere;
+}
+
+.room-head .room-back {
+  flex: 0 0 auto;
+}
+
+/* narrow friend rows */
+@media (max-width: 560px) {
+  .friend-row {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .friend-row .friend-copy {
+    flex: 1 1 calc(100% - 36px);
+  }
+
+  .friend-row .friend-actions {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+    padding-left: 32px;
+  }
+}
+
+/* touch targets */
+@media (max-width: 760px) {
+  .tab {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .account-tab {
+    min-height: 44px;
+  }
+
+  .account-submit {
+    min-height: 44px;
+  }
+
+  .soft-btn {
+    min-height: 44px;
+  }
+}

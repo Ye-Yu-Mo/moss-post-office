@@ -1089,8 +1089,31 @@ async fn daily_garden_quest_harvest_and_claim() {
 #[tokio::test]
 async fn nightwatch_medals_are_serialized_and_idempotent() {
     let (app, _dir) = test_app();
+    let eve = register_ok(&app, "eve_night", None).await;
+    let eve_token = eve["token"].as_str().unwrap();
+    let response = app
+        .clone()
+        .oneshot(post_json(
+            eve_token,
+            "/v1/nightwatch/claim",
+            json!({ "level": 5 }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
     let alice = register_ok(&app, "alice_night", None).await;
     let alice_token = alice["token"].as_str().unwrap();
+    let response = app
+        .clone()
+        .oneshot(save_request(
+            alice_token,
+            0,
+            json!({ "nightWatch": { "best": 20 } }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
 
     let response = app
         .clone()
@@ -1122,6 +1145,16 @@ async fn nightwatch_medals_are_serialized_and_idempotent() {
 
     let bob = register_ok(&app, "bob_night", None).await;
     let bob_token = bob["token"].as_str().unwrap();
+    let response = app
+        .clone()
+        .oneshot(save_request(
+            bob_token,
+            0,
+            json!({ "nightWatch": { "best": 5 } }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
     let response = app
         .clone()
         .oneshot(post_json(
@@ -1202,4 +1235,55 @@ async fn save_publishes_best_night_to_square() {
         .find(|player| player["name"] == "night_rank")
         .expect("registered player in square");
     assert_eq!(me["night_best"], 7);
+}
+
+#[tokio::test]
+async fn postcard_daily_limit_is_atomic_under_concurrency() {
+    use moss_sync::db::NewPostcard;
+
+    let dir = tempfile::tempdir().expect("temp dir");
+    let db = Arc::new(Db::new(dir.path().join("race.db")).expect("database"));
+    db.call(|conn| {
+        conn.execute(
+            "INSERT OR IGNORE INTO users (id, username, username_key, verifier, created_at)
+             VALUES ('race_user', 'race', 'race', '00', 0)",
+            [],
+        )?;
+        Ok(())
+    })
+    .await
+    .expect("seed user");
+    let mut handles = Vec::new();
+    for index in 0..6 {
+        let db = db.clone();
+        handles.push(tokio::spawn(async move {
+            db.send_postcards_with_limit(
+                "race_user".into(),
+                "bot".into(),
+                vec![NewPostcard {
+                    sender_id: "b_moss".into(),
+                    sender_name: "苔苔".into(),
+                    sender_kind: "bot".into(),
+                    recipient_id: "race_user".into(),
+                    template: "reply".into(),
+                    gift_kind: Some("ink".into()),
+                    gift_amount: 1,
+                    created_at: 100 + index,
+                    arrives_at: 100 + index,
+                }],
+                5,
+                0,
+                100 + index,
+            )
+            .await
+            .expect("send")
+        }));
+    }
+    let mut accepted = 0;
+    for handle in handles {
+        if handle.await.expect("task") {
+            accepted += 1;
+        }
+    }
+    assert_eq!(accepted, 5);
 }

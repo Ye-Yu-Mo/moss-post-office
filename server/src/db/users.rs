@@ -110,6 +110,20 @@ impl Db {
         .await
     }
 
+    pub async fn night_best(&self, user_id: String) -> Result<i64, ApiError> {
+        self.call(move |conn| {
+            let value: Option<i64> = conn
+                .query_row(
+                    "SELECT night_best FROM users WHERE id = ?1",
+                    [user_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            Ok(value.unwrap_or(0))
+        })
+        .await
+    }
+
     pub async fn update_stats(
         &self,
         user_id: String,

@@ -6,7 +6,7 @@
       class="room-btn"
       :class="{ 'is-active': item.id === snapshot.active }"
       type="button"
-      :aria-label="item.label"
+      :aria-label="item.ariaLabel || item.label"
       :aria-current="item.id === snapshot.active ? 'page' : undefined"
       @click="handlers.onNavigate(item.id)"
       @pointerenter="handlers.onPrefetch && handlers.onPrefetch(item.id)"

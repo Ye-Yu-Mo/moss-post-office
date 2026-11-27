@@ -35,8 +35,22 @@
       <span v-if="snapshot.blocked.length" class="nw-wave-fog">雾障 {{ snapshot.blocked.length }} 格</span>
     </div>
 
+    <div v-if="snapshot.phase === 'ready'" class="nw-ready-bar">
+      <div class="nw-ready-copy">
+        <p class="nw-overlay-kicker">{{ snapshot.deepFog.active ? "苔藓邮局 · 深雾" : "苔藓邮局 · 守夜" }}</p>
+        <b>第 {{ snapshot.level }} 夜<template v-if="snapshot.deepFog.active"> · 深雾 {{ snapshot.deepFog.layer }} 层</template></b>
+        <span>选卡先摆位，雾障格不能种；确认后再开始。</span>
+      </div>
+      <div class="nw-ready-actions">
+        <button class="secondary-btn" type="button" @click="handlers.onClose">回守夜</button>
+        <button class="primary-btn" type="button" @click="handlers.onStart">开始守夜</button>
+      </div>
+    </div>
+
     <div
       class="nw-board"
+      role="group"
+      aria-label="守夜棋盘，5 行 8 列"
       :class="{ 'is-break': snapshot.phase === 'break', 'is-over': isOver, 'is-deep': snapshot.deepFog.active }"
     >
       <div class="nw-lanes" aria-hidden="true">
@@ -57,7 +71,7 @@
           }"
           type="button"
           :disabled="cell.blocked"
-          :aria-label="cell.blocked ? '雾障，不能种植' : cell.tower ? `${cell.tower.name}，生命 ${cell.tower.hp}` : `第 ${cell.row + 1} 行第 ${cell.col + 1} 格`"
+          :aria-label="cell.blocked ? `第 ${cell.row + 1} 行第 ${cell.col + 1} 格，雾障，不能种植` : cell.tower ? `第 ${cell.row + 1} 行第 ${cell.col + 1} 格，${cell.tower.name}，生命 ${cell.tower.hp}` : `第 ${cell.row + 1} 行第 ${cell.col + 1} 格`"
           @click="handleCell(cell)"
         >
           <span v-if="cell.blocked" class="nw-blocked" aria-hidden="true" v-html="icons.mist || ''"></span>
@@ -89,35 +103,6 @@
           :class="'is-' + shot.kind"
           :style="shotStyle(shot)"
         ></span>
-      </div>
-
-      <div v-if="snapshot.phase === 'ready'" class="nw-overlay">
-        <p class="nw-overlay-kicker">{{ snapshot.deepFog.active ? "苔藓邮局 · 深雾" : "苔藓邮局 · 守夜" }}</p>
-        <h4>第 {{ snapshot.level }} 夜<template v-if="snapshot.deepFog.active"> · 深雾 {{ snapshot.deepFog.layer }} 层</template></h4>
-        <p>雾从邮路尽头漫上来。把信封草、邮票花和彩纸藤种在格子里，别让影子摸到门板。</p>
-        <p class="nw-overlay-note">相同的两株、或者有配方的两株，种在同一格就能融合。</p>
-        <p class="nw-overlay-note">夜蛾飞过墙，夜鼠偷灯油，鼓手会给同伴加速。</p>
-        <p v-if="snapshot.level >= 9" class="nw-overlay-note">第 9 夜起，融合体还能再和基础植物融合一次。</p>
-        <p v-if="snapshot.deepFog.active" class="nw-overlay-note">
-          深雾第 {{ snapshot.deepFog.layer }} 层「{{ snapshot.deepFog.name }}」：{{ snapshot.deepFog.desc }} · {{ snapshot.deepFog.rewardText }}
-        </p>
-        <p v-if="snapshot.modifier.name" class="nw-overlay-note">
-          今日词条「{{ snapshot.modifier.name }}」：{{ snapshot.modifier.desc }}{{ snapshot.modifier.rewardText ? ` · ${snapshot.modifier.rewardText}` : "" }}
-        </p>
-        <div class="nw-overlay-actions">
-          <button class="primary-btn" type="button" @click="handlers.onStart">开始守夜</button>
-          <button class="secondary-btn" type="button" @click="handlers.onClose">回守夜</button>
-        </div>
-      </div>
-
-      <div v-if="snapshot.paused && !isOver && snapshot.phase !== 'ready'" class="nw-overlay">
-        <p class="nw-overlay-kicker">暂停</p>
-        <h4>先歇一会</h4>
-        <p>灯油和雾都停住了。回邮局会放弃这一夜，不扣存档。</p>
-        <div class="nw-overlay-actions">
-          <button class="primary-btn" type="button" @click="handlers.onPause">继续守夜</button>
-          <button class="secondary-btn" type="button" @click="handlers.onClose">回守夜</button>
-        </div>
       </div>
 
       <div v-if="snapshot.phase === 'break'" class="nw-break">
@@ -219,7 +204,7 @@ function handleCell(cell) {
 const medalNote = computed(() => {
   const source = snapshot.value;
   if (!source || !source.result || !source.result.won) return "";
-  return [5, 10, 15].includes(source.result.level)
+  return [5, 10, 15, 20, 25, 30].includes(source.result.level)
     ? "这一夜有纪念戳，会由邮局签发并记进邮册。"
     : "";
 });
