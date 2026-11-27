@@ -9,6 +9,8 @@
       :aria-label="item.label"
       :aria-current="item.id === snapshot.active ? 'page' : undefined"
       @click="handlers.onNavigate(item.id)"
+      @pointerenter="handlers.onPrefetch && handlers.onPrefetch(item.id)"
+      @focus="handlers.onPrefetch && handlers.onPrefetch(item.id)"
     >
       <span class="room-icon" aria-hidden="true" v-html="item.icon"></span>
       <span class="room-label">{{ item.label }}</span>

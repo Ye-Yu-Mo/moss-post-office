@@ -10,6 +10,53 @@ function check(name, ok, detail = "") {
   console.log(`${ok ? "ok  " : "FAIL"} ${name}${detail ? ` — ${detail}` : ""}`);
 }
 
+async function registerViaDialog(page, user) {
+  await page.click("#accountBtn");
+  await page.click("[data-account-mode='register']");
+  await page.fill("#accountUser", user);
+  await page.fill("#accountPass", "12345678");
+  await page.click("[data-account-submit]");
+  await page.waitForSelector(".account-user", { timeout: 20000 });
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(300);
+}
+
+async function logoutViaDialog(page) {
+  await page.click("#accountBtn");
+  await page.waitForSelector("[data-account-logout]");
+  await page.click("[data-account-logout]");
+  await page.waitForTimeout(900);
+}
+
+async function loginViaDialog(page, user) {
+  await page.click("#accountBtn");
+  await page.click("[data-account-mode='login']");
+  await page.fill("#accountUser", user);
+  await page.fill("#accountPass", "12345678");
+  await page.click("[data-account-submit]");
+  try {
+    await page.waitForSelector(".account-user", { timeout: 5000 });
+  } catch (error) {
+    /* a remote save reloads the page */
+  }
+  await page.waitForTimeout(2000);
+  if (!(await page.locator("#modal").isHidden())) await page.keyboard.press("Escape");
+  await page.waitForTimeout(400);
+}
+
+async function ensureQaHook(page) {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    await page.goto(`${BASE}/?qa=${Date.now()}-${attempt}#qa`, { waitUntil: "networkidle" });
+    try {
+      await page.waitForFunction(() => Boolean(window.__moss), null, { timeout: 3500 });
+      return true;
+    } catch (error) {
+      await page.waitForTimeout(600);
+    }
+  }
+  return false;
+}
+
 async function main() {
   const browser = await chromium.launch({ channel: "chrome", headless: true });
   const errors = [];
@@ -54,14 +101,14 @@ async function main() {
   check("hash follows room", (await page.evaluate(() => location.hash)) === "#/town");
   check("town logged-out copy", (await room("town").innerText()).includes("还没有登录"));
 
+  const transition = await page.evaluate(() => {
+    const visible = document.querySelector("section.room:not([hidden])");
+    return visible ? getComputedStyle(visible).animationName : "";
+  });
+  check("room enter animation is wired", transition.includes("room-in"), transition);
+
   const user = `qa_${Date.now().toString().slice(-8)}`;
-  await page.click("#accountBtn");
-  await page.click("[data-account-mode='register']");
-  await page.fill("#accountUser", user);
-  await page.fill("#accountPass", "12345678");
-  await page.click("[data-account-submit]");
-  await page.waitForSelector(".account-user", { timeout: 20000 });
-  await page.keyboard.press("Escape");
+  await registerViaDialog(page, user);
   await page.waitForTimeout(1800);
   check("town loads after register", (await room("town").locator(".friend-code-row").count()) > 0);
   check("town keeps garden", (await room("town").locator(".garden-grid").count()) > 0);
@@ -89,6 +136,37 @@ async function main() {
     check("town returns from composer", (await room("town").locator(".friend-code-row").count()) > 0);
   }
 
+  const friendCode = (await room("town").locator(".friend-code-row b").innerText()).trim();
+  const friendUser = `qb_${Date.now().toString().slice(-8)}`;
+  await logoutViaDialog(page);
+  await registerViaDialog(page, friendUser);
+  await page.locator(".room-btn", { hasText: "镇口" }).click();
+  await page.waitForTimeout(1200);
+  await room("town").locator("#friendCodeInput").fill(friendCode);
+  await room("town").locator(".friend-add-btn").click();
+  await page.waitForTimeout(1200);
+  await logoutViaDialog(page);
+  await loginViaDialog(page, user);
+  await page.locator(".room-btn", { hasText: "镇口" }).click();
+  await page.waitForTimeout(1800);
+  const accept = room("town").locator(".friend-request button", { hasText: "接受" }).first();
+  if (await accept.count()) {
+    await accept.click();
+    await page.waitForTimeout(1500);
+  }
+  check("friend request accepted", (await room("town").locator(".friend-row").count()) > 0);
+  const visit = room("town").locator(".friend-row button", { hasText: "串门" }).first();
+  if (await visit.count()) {
+    await visit.click();
+    await page.waitForTimeout(1000);
+    check("friend profile is a town view", (await room("town").locator("[data-friend-profile-root] .friend-profile-stats span").count()) === 4);
+    check("friend profile is not a modal", await page.locator("#modal").isHidden());
+    await room("town").locator("[data-town-back]").click();
+    await page.waitForTimeout(600);
+    check("town returns from profile", (await room("town").locator(".friend-code-row").count()) > 0);
+  }
+
+  check("QA hook survives login reload", await ensureQaHook(page));
   await page.evaluate(() => {
     const state = window.__moss.state();
     state.totalEarned = 9000;

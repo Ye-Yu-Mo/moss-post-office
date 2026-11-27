@@ -6990,3 +6990,25 @@ h3 {
   flex: 1 1 auto;
   min-width: 0;
 }
+
+/* room enter transition */
+@keyframes room-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.room:not([hidden]) {
+  animation: room-in 240ms ease both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .room:not([hidden]) {
+    animation: none;
+  }
+}

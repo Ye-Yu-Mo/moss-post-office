@@ -5284,6 +5284,7 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
     if (activeRoom === "town" && next !== "town") {
       unmountTown();
       unmountFriendGarden();
+      unmountFriendProfile();
       unmountPostcardComposer();
     }
     if (activeRoom === "routes" && next !== "routes") closeRoutesRoom();
@@ -5304,9 +5305,16 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
     updateTabBadges();
   }
 
+  function prefetchRoom(room) {
+    if (room === "town") prefetchTown();
+  }
+
   function initRoomShell() {
     mountRoomNav(roomEls.nav, {
-      handlers: { onNavigate: (room) => navigateRoom(room) }
+      handlers: {
+        onNavigate: (room) => navigateRoom(room),
+        onPrefetch: prefetchRoom
+      }
     });
     if (roomEls.routesHost) {
       roomEls.routesHost.addEventListener("click", (event) => {
@@ -6250,7 +6258,6 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
     unmountSeedModal();
     unmountInfoModal();
     unmountEventModal();
-    unmountFriendProfile();
     modalAction = typeof options.action === "function" ? options.action : null;
     modalReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     els.modalTitle.textContent = options.title;
@@ -6283,7 +6290,6 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
     unmountSeedModal();
     unmountInfoModal();
     unmountEventModal();
-    unmountFriendProfile();
     els.modal.hidden = true;
     document.body.style.overflow = "";
     modalAction = null;
@@ -6669,6 +6675,7 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
       setTimeout(() => {
         cloudBootstrap();
       }, 800);
+      setTimeout(prefetchTown, 1800);
     }
   }
 
@@ -6757,6 +6764,7 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
         renderAccountModal();
         flushNightMedals();
         if (activeRoom === "town") loadTown();
+        else prefetchTown();
         showToast("账号建好了，本地存档已经一起寄上去。", 4600);
         return { ok: true };
       }
@@ -6797,6 +6805,7 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
       renderAccountModal();
       flushNightMedals();
       if (activeRoom === "town") loadTown();
+      else prefetchTown();
       showToast("服务器上还没有存档，已把本地存档传上去。", 4600);
       return { ok: true };
     } catch (error) {
@@ -7217,12 +7226,30 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
     return `<div data-town-root></div>`;
   }
 
-  function enterTownRoom() {
-    townData = null;
+  async function enterTownRoom() {
     townError = "";
-    townLoading = Boolean(account && account.token);
+    if (!account || !account.token) {
+      townLoading = false;
+      renderTownScreen();
+      return;
+    }
+    const wasPrefetching = Boolean(townPrefetching);
+    if (wasPrefetching) {
+      try {
+        await townPrefetching;
+      } catch (error) {
+        /* loadTown below retries */
+      }
+    }
+    if (townData) {
+      townLoading = false;
+      renderTownScreen();
+      if (!wasPrefetching) loadTown();
+      return;
+    }
+    townLoading = true;
     renderTownScreen();
-    if (account && account.token) loadTown();
+    loadTown();
   }
 
   function renderTownScreen() {
@@ -7230,6 +7257,7 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
     townView = "main";
     unmountTown();
     unmountFriendGarden();
+    unmountFriendProfile();
     unmountPostcardComposer();
     roomEls.townHost.innerHTML = `
       <div class="room-head">
@@ -7244,6 +7272,47 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
     updateTownButton();
   }
 
+  let townPrefetching = null;
+
+  async function fetchTownData() {
+    const [square, mailbox, friendData, owned, ownGarden] = await Promise.all([
+      cloudApi.square(account),
+      cloudApi.postcards(account),
+      cloudApi.friends(account),
+      cloudApi.collectibles(account),
+      cloudApi.garden(account)
+    ]);
+    const addedCollectibles = mergeCollectibles(owned);
+    if (addedCollectibles) saveGame();
+    townData = {
+      players: Array.isArray(square && square.players) ? square.players : [],
+      cards: Array.isArray(mailbox && mailbox.cards) ? mailbox.cards : [],
+      friends: friendData || { code: "", friends: [], incoming: [], outgoing: [] },
+      collectibles: Array.isArray(owned) ? owned : [],
+      garden: ownGarden || null
+    };
+    townUnread =
+      townData.cards.filter((card) => card.gift_kind && !card.claimed).length +
+      (townData.friends.incoming || []).length +
+      ((townData.garden && townData.garden.plots) || []).filter((plot) => plot.ripe).length +
+      (townData.garden && townData.garden.quest &&
+      townData.garden.quest.progress >= townData.garden.quest.amount &&
+      !townData.garden.quest.claimed
+        ? 1
+        : 0);
+    refreshRoomNav();
+    return townData;
+  }
+
+  function prefetchTown() {
+    if (!account || !account.token || townData || townPrefetching) return;
+    townPrefetching = fetchTownData()
+      .catch(() => {})
+      .finally(() => {
+        townPrefetching = null;
+      });
+  }
+
   async function loadTown() {
     if (!account || !account.token) {
       renderTownScreen();
@@ -7251,35 +7320,11 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
     }
     townLoading = true;
     townError = "";
-    renderTownScreen();
+    if (activeRoom === "town" && townView === "main") renderTownScreen();
     try {
-      const [square, mailbox, friendData, owned, ownGarden] = await Promise.all([
-        cloudApi.square(account),
-        cloudApi.postcards(account),
-        cloudApi.friends(account),
-        cloudApi.collectibles(account),
-        cloudApi.garden(account)
-      ]);
-      const addedCollectibles = mergeCollectibles(owned);
-      if (addedCollectibles) saveGame();
-      townData = {
-        players: Array.isArray(square && square.players) ? square.players : [],
-        cards: Array.isArray(mailbox && mailbox.cards) ? mailbox.cards : [],
-        friends: friendData || { code: "", friends: [], incoming: [], outgoing: [] },
-        collectibles: Array.isArray(owned) ? owned : [],
-        garden: ownGarden || null
-      };
-      townUnread =
-        townData.cards.filter((card) => card.gift_kind && !card.claimed).length +
-        (townData.friends.incoming || []).length +
-        ((townData.garden && townData.garden.plots) || []).filter((plot) => plot.ripe).length +
-        (townData.garden && townData.garden.quest &&
-        townData.garden.quest.progress >= townData.garden.quest.amount &&
-        !townData.garden.quest.claimed
-          ? 1
-          : 0);
+      await fetchTownData();
       townLoading = false;
-      renderTownScreen();
+      if (activeRoom === "town" && townView === "main") renderTownScreen();
     } catch (error) {
       townLoading = false;
       if (error.status === 401) {
@@ -7288,7 +7333,7 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
         refreshAccountButton();
       }
       townError = cloudErrorMessage(error);
-      renderTownScreen();
+      if (activeRoom === "town" && townView === "main") renderTownScreen();
     }
   }
 
@@ -7371,7 +7416,7 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
     }
   }
 
-  async function visitFriendById(id) {
+  async function visitFriendById(id, options = {}) {
     if (!account || !account.token) return;
     try {
       const result = await cloudApi.visitFriend(account, id);
@@ -7380,7 +7425,7 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
       } else {
         showToast("今天已经来过这位朋友家了。", 2800);
       }
-      await loadTown();
+      if (options.refresh !== false) await loadTown();
     } catch (error) {
       showToast(cloudErrorMessage(error), 3600);
     }
@@ -7399,13 +7444,22 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
 
   async function openFriendProfile(id) {
     if (!account || !account.token) return;
-    openModal({
-      title: "串门",
-      body: `<div data-friend-profile-root></div>`,
-      footer: false,
-      kicker: "镇口 · 好友"
-    });
-    const root = els.modalBody.querySelector("[data-friend-profile-root]");
+    if (activeRoom !== "town") navigateRoom("town");
+    townView = "profile";
+    unmountTown();
+    unmountFriendGarden();
+    unmountPostcardComposer();
+    unmountFriendProfile();
+    roomEls.townHost.innerHTML = `
+      <div class="room-head">
+        <div>
+          <p class="room-kicker">镇口 · 好友</p>
+          <h2>串门</h2>
+        </div>
+        <button class="link-btn room-back" type="button" data-town-back>回镇口</button>
+      </div>
+      <div data-friend-profile-root></div>`;
+    const root = roomEls.townHost.querySelector("[data-friend-profile-root]");
     if (!root) return;
     let friendData = {};
     mountFriendProfile(root, {
@@ -7415,8 +7469,11 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
           "user",
           friendData.username || "好友"
         ),
-      onVisit: () => visitFriendById(friendData.id || id),
-      onBack: () => openTown()
+      onVisit: async () => {
+        await visitFriendById(friendData.id || id, { refresh: false });
+        openFriendProfile(friendData.id || id);
+      },
+      onBack: () => renderTownScreen()
     });
     setFriendProfileSnapshot({ status: "loading" });
     try {
