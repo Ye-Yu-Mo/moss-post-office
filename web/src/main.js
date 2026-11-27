@@ -1,6 +1,7 @@
 import * as cloudApi from "./cloud.js";
 import { deriveVerifier, proveVerifier } from "./crypto.js";
 import { mountTown, unmountTown } from "./ui/mountTown.js";
+import { mountAccount, unmountAccount } from "./ui/mountAccount.js";
 
 (() => {
   "use strict";
@@ -1154,7 +1155,6 @@ import { mountTown, unmountTown } from "./ui/mountTown.js";
   let expConfirmAbandon = false;
   let expeditionPrep = new Set();
   let account = null;
-  let accountMode = "login";
   let accountBaseDraft = cloudApi.defaultBase();
   let cloudPushTimer = 0;
   let cloudPushing = false;
@@ -5524,6 +5524,7 @@ import { mountTown, unmountTown } from "./ui/mountTown.js";
 
   function openModal(options) {
     unmountTown();
+    unmountAccount();
     modalAction = typeof options.action === "function" ? options.action : null;
     modalReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     els.modalTitle.textContent = options.title;
@@ -5553,6 +5554,7 @@ import { mountTown, unmountTown } from "./ui/mountTown.js";
   function closeModal() {
     if (els.modal.hidden) return;
     unmountTown();
+    unmountAccount();
     els.modal.hidden = true;
     document.body.style.overflow = "";
     modalAction = null;
@@ -5806,72 +5808,35 @@ import { mountTown, unmountTown } from "./ui/mountTown.js";
     updateTownButton();
   }
 
-  function accountModalMarkup() {
-    if (!account || !account.token) {
-      const localNote = state ? `本机累计 ${formatNumber(state.totalEarned)} 张邮票` : "";
-      return `
-        <div class="account-box">
-          <div class="account-tabs" role="tablist" aria-label="登录或注册">
-            <button class="account-tab${accountMode === "login" ? " is-active" : ""}" type="button" role="tab" aria-selected="${accountMode === "login"}" data-account-mode="login">登录</button>
-            <button class="account-tab${accountMode === "register" ? " is-active" : ""}" type="button" role="tab" aria-selected="${accountMode === "register"}" data-account-mode="register">注册</button>
-          </div>
-          <p class="account-copy">${accountMode === "register"
-            ? "注册时会把浏览器里的本地存档一起上传；之后换设备登录，就能接着这一程送信。"
-            : "登录后以服务器上的存档为准，本机进度会被服务器覆盖。"}</p>
-          <label class="account-field"><span>用户名</span>
-            <input id="accountUser" autocomplete="username" maxlength="24" placeholder="3-24 个字符">
-          </label>
-          <label class="account-field"><span>密码</span>
-            <input id="accountPass" type="password" autocomplete="${accountMode === "register" ? "new-password" : "current-password"}" maxlength="128" placeholder="至少 8 位">
-          </label>
-          <label class="account-field"><span>服务器</span>
-            <input id="accountBase" value="${escapeHtml(cloudBase())}" placeholder="http://127.0.0.1:17322">
-          </label>
-          <p class="account-status" id="accountStatus">${escapeHtml(localNote)}</p>
-          <button class="primary-btn account-submit" type="button" data-account-submit>${accountMode === "register" ? "注册并上传存档" : "登录"}</button>
-          <p class="account-hint">密码不会离开浏览器：登录用一次性挑战，服务器只存派生校验值。HTTP 下仍请勿复用重要密码。</p>
-        </div>`;
-    }
-
-    return `
-      <div class="account-box">
-        <p class="account-user">已登录 <b>${escapeHtml(account.username)}</b></p>
-        <p class="account-status" id="accountStatus">${escapeHtml(cloudStatusText())}</p>
-        ${account.conflict ? `
-          <div class="account-conflict">
-            <p>云端存档比本机新（修订 ${account.conflict}）。选一份保留：</p>
-            <div class="account-actions">
-              <button class="primary-btn" type="button" data-account-pull>用云端覆盖本地</button>
-              <button class="secondary-btn" type="button" data-account-push>上传本地覆盖云端</button>
-            </div>
-          </div>` : ""}
-        <div class="account-actions">
-          <button class="primary-btn" type="button" data-account-sync ${account.conflict ? "disabled" : ""}>立即同步</button>
-          <button class="secondary-btn" type="button" data-account-logout>退出登录</button>
-        </div>
-        <p class="account-hint">服务器 ${escapeHtml(account.base)} · 修订 ${account.revision}</p>
-      </div>`;
-  }
-
-  function setAccountStatus(text) {
-    const element = document.getElementById("accountStatus");
-    if (element) setText(element, text);
+  function mountAccountView() {
+    const root = document.querySelector("[data-account-root]");
+    if (!root) return;
+    mountAccount(root, {
+      account,
+      status: cloudStatusText(),
+      base: account ? account.base : accountBaseDraft,
+      onSubmit: submitAccount,
+      onLogout: accountLogout,
+      onSync: cloudPushNow,
+      onPull: accountPullOverride,
+      onPush: accountPushOverride
+    });
   }
 
   function renderAccountModal() {
     if (!els.modal || els.modal.hidden) return;
-    if (!els.modalBody.querySelector(".account-box")) return;
-    els.modalBody.innerHTML = accountModalMarkup();
+    if (!els.modalBody.querySelector("[data-account-root]")) return;
+    mountAccountView();
   }
 
   function openAccountModal() {
-    accountMode = "login";
     openModal({
       title: "账号与云存档",
-      body: accountModalMarkup(),
+      body: `<div data-account-root></div>`,
       footer: false,
       kicker: "苔藓邮局 · 云端"
     });
+    mountAccountView();
   }
 
   function scheduleCloudPush(delay = 2500) {
@@ -5978,37 +5943,23 @@ import { mountTown, unmountTown } from "./ui/mountTown.js";
     }
   }
 
-  async function submitAccount() {
-    const userInput = document.getElementById("accountUser");
-    const passInput = document.getElementById("accountPass");
-    const baseInput = document.getElementById("accountBase");
-    if (!userInput || !passInput) return;
-
-    const username = userInput.value.trim();
-    const password = passInput.value;
-    const base = (baseInput && baseInput.value.trim()) || accountBaseDraft;
+  async function submitAccount(payload = {}) {
+    const mode = payload.mode === "register" ? "register" : "login";
+    const username = String(payload.username || "").trim();
+    const password = String(payload.password || "");
+    const base = String(payload.base || accountBaseDraft).trim() || accountBaseDraft;
     accountBaseDraft = base;
 
     if (username.length < 3 || username.length > 24) {
-      setAccountStatus("用户名需要 3-24 个字符。");
-      return;
+      return { ok: false, message: "用户名需要 3-24 个字符。" };
     }
     if (password.length < 8) {
-      setAccountStatus("密码至少 8 位。");
-      return;
+      return { ok: false, message: "密码至少 8 位。" };
     }
-
-    const submit = document.querySelector("[data-account-submit]");
-    if (submit) submit.disabled = true;
-    setAccountStatus("正在生成登录凭据…");
 
     try {
       const verifier = await deriveVerifier(username, password);
-      setAccountStatus(
-        accountMode === "register" ? "正在注册并上传本地存档…" : "正在获取登录挑战…"
-      );
-
-      if (accountMode === "register") {
+      if (mode === "register") {
         const result = await cloudApi.register({
           base,
           username,
@@ -6028,11 +5979,10 @@ import { mountTown, unmountTown } from "./ui/mountTown.js";
         refreshAccountButton();
         renderAccountModal();
         showToast("账号建好了，本地存档已经一起寄上去。", 4600);
-        return;
+        return { ok: true };
       }
 
       const loginChallenge = await cloudApi.challenge({ base, username });
-      setAccountStatus("正在登录…");
       const result = await cloudApi.login({
         base,
         username,
@@ -6053,7 +6003,7 @@ import { mountTown, unmountTown } from "./ui/mountTown.js";
         pending.revision = remote.revision;
         cloudApi.saveAccount(pending);
         applyRemoteSave(remote.payload);
-        return;
+        return { ok: true };
       }
 
       account = pending;
@@ -6067,9 +6017,9 @@ import { mountTown, unmountTown } from "./ui/mountTown.js";
       refreshAccountButton();
       renderAccountModal();
       showToast("服务器上还没有存档，已把本地存档传上去。", 4600);
+      return { ok: true };
     } catch (error) {
-      setAccountStatus(cloudErrorMessage(error));
-      if (submit && submit.isConnected) submit.disabled = false;
+      return { ok: false, message: cloudErrorMessage(error) };
     }
   }
 
@@ -6089,11 +6039,11 @@ import { mountTown, unmountTown } from "./ui/mountTown.js";
 
   async function accountPullOverride() {
     if (!account || !account.token) return;
-    setAccountStatus("正在读取云端存档…");
+    showToast("正在读取云端存档…", 1600);
     try {
       const remote = await cloudApi.pull(account);
       if (!remote) {
-        setAccountStatus("云端没有存档。");
+        showToast("云端没有存档。", 2800);
         return;
       }
       account.revision = remote.revision;
@@ -6102,7 +6052,7 @@ import { mountTown, unmountTown } from "./ui/mountTown.js";
       cloudApi.saveAccount(account);
       applyRemoteSave(remote.payload);
     } catch (error) {
-      setAccountStatus(cloudErrorMessage(error));
+      showToast(cloudErrorMessage(error), 3600);
     }
   }
 
@@ -7121,32 +7071,6 @@ import { mountTown, unmountTown } from "./ui/mountTown.js";
       const template = event.target.closest("[data-postcard-template]");
       if (template) {
         sendTownPostcard(template.dataset.postcardTemplate);
-        return;
-      }
-      const mode = event.target.closest("[data-account-mode]");
-      if (mode) {
-        accountMode = mode.dataset.accountMode === "register" ? "register" : "login";
-        renderAccountModal();
-        return;
-      }
-      if (event.target.closest("[data-account-submit]")) {
-        submitAccount();
-        return;
-      }
-      if (event.target.closest("[data-account-sync]")) {
-        cloudPushNow();
-        return;
-      }
-      if (event.target.closest("[data-account-logout]")) {
-        accountLogout();
-        return;
-      }
-      if (event.target.closest("[data-account-pull]")) {
-        accountPullOverride();
-        return;
-      }
-      if (event.target.closest("[data-account-push]")) {
-        accountPushOverride();
         return;
       }
     });
