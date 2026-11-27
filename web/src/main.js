@@ -1,5 +1,6 @@
 import * as cloudApi from "./cloud.js";
 import { deriveVerifier, proveVerifier } from "./crypto.js";
+import { mountGarden, unmountGarden } from "./ui/mountGarden.js";
 
 (() => {
   "use strict";
@@ -5522,6 +5523,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
   }
 
   function openModal(options) {
+    unmountGarden();
     modalAction = typeof options.action === "function" ? options.action : null;
     modalReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     els.modalTitle.textContent = options.title;
@@ -5550,6 +5552,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
 
   function closeModal() {
     if (els.modal.hidden) return;
+    unmountGarden();
     els.modal.hidden = true;
     document.body.style.overflow = "";
     modalAction = null;
@@ -6378,6 +6381,25 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     }
   }
 
+  function mountTownGarden() {
+    const root = document.querySelector("[data-garden-root]");
+    if (!root || !townData || !townData.garden) return;
+    const iconMap = Object.fromEntries(
+      Object.entries(GARDEN_ICONS).map(([crop, icon]) => [crop, ICONS[icon]])
+    );
+    mountGarden(root, {
+      garden: townData.garden,
+      icons: iconMap,
+      formatNumber,
+      timeText: townTime,
+      avatarFor: townAvatar,
+      onHarvest: harvestGardenPlot,
+      onWater: waterGardenPlot,
+      onOpenSeeds: openSeedModal,
+      onClaimQuest: claimDailyGardenQuest
+    });
+  }
+
   function updateTownButton() {
     if (els.townDot) els.townDot.hidden = townUnread <= 0;
     if (els.townBtn) {
@@ -6432,56 +6454,7 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
     const incoming = friendData.incoming || [];
     const outgoing = friendData.outgoing || [];
     const garden = townData.garden || null;
-    const quest = garden && garden.quest;
-    const questRewardLabel = quest
-      ? quest.reward_kind === "stamps"
-        ? `邮票×${formatNumber(quest.reward_amount)}`
-        : quest.reward_kind === "paper"
-          ? `纸×${quest.reward_amount}`
-          : `墨点×${quest.reward_amount}`
-      : "";
-    const questMarkup = quest
-      ? `<div class="garden-quest${quest.claimed ? " is-claimed" : quest.progress >= quest.amount ? " is-ready" : ""}">
-          <span class="garden-icon" aria-hidden="true">${ICONS[GARDEN_ICONS[quest.crop] || "letter"]}</span>
-          <div class="garden-copy">
-            <b>今日柜台：收 1 份${quest.name}</b>
-            <small>${quest.progress} / ${quest.amount} · 奖励 ${questRewardLabel}</small>
-          </div>
-          <button class="link-btn" type="button" data-claim-quest ${quest.claimed || quest.progress < quest.amount ? "disabled" : ""}>${quest.claimed ? "今日已交" : quest.progress >= quest.amount ? "交菜" : "还差一份"}</button>
-        </div>`
-      : "";
-    const gardenSection = garden
-      ? `<section class="town-section garden-section">
-          <div class="tree-head"><span>后院</span><span>${(garden.plots || []).filter((plot) => plot.ripe).length} 块可收</span></div>
-          <p class="town-lead">种着信封草、邮票花和墨莓。熟了就收，朋友也可以来偷一把或帮你浇水。</p>
-          ${questMarkup}
-          <p class="garden-next">${garden.harvests < 20
-            ? `已收 ${garden.harvests || 0} 次 · 再收 ${20 - (garden.harvests || 0)} 次解锁第 4 块地`
-            : garden.harvests < 45
-              ? `已收 ${garden.harvests || 0} 次 · 再收 ${45 - garden.harvests} 次解锁第 5 块地`
-              : `已收 ${garden.harvests || 0} 次 · 菜地已扩到 5 块`}</p>
-          <div class="garden-grid">${(garden.plots || []).map((plot) => gardenPlotMarkup(plot, { mode: "own", harvests: garden.harvests || 0 })).join("")}</div>
-          <div class="garden-journal">
-            <div class="tree-head"><span>作物图鉴</span><span>收成 / 被偷</span></div>
-            <div class="crop-stat-grid">
-              ${(garden.crop_stats || []).map((stat) => `
-                <div class="crop-stat">
-                  <span class="crop-stat-icon" aria-hidden="true">${ICONS[GARDEN_ICONS[stat.crop] || "letter"]}</span>
-                  <b>${stat.name}</b>
-                  <small>收 ${formatNumber(stat.harvests)} · 被偷 ${formatNumber(stat.stolen)}</small>
-                </div>`).join("")}
-            </div>
-            <div class="tree-head"><span>最近来访</span><span>${(garden.visitors || []).length} 条</span></div>
-            ${(garden.visitors || []).length
-              ? `<div class="visitor-list">${(garden.visitors || []).map((visitor) => `
-                  <div class="visitor-row">
-                    ${townAvatar(visitor.actor_name)}
-                    <div><b>${escapeHtml(visitor.actor_name)}</b><small>${visitor.action === "steal" ? "偷了" : "浇了"}一次${escapeHtml(visitor.name)} · ${townTime(visitor.created_at)}</small></div>
-                  </div>`).join("")}</div>`
-              : `<p class="garden-journal-empty">还没有人来过后院。</p>`}
-          </div>
-        </section>`
-      : "";
+    const gardenSection = garden ? `<div data-garden-root></div>` : "";
     const friendSection = `
       <section class="town-section town-friends">
         <div class="tree-head"><span>好友</span><span>${friendList.length} 位</span></div>
@@ -6595,7 +6568,9 @@ import { deriveVerifier, proveVerifier } from "./crypto.js";
   function renderTownModal() {
     if (!els.modal || els.modal.hidden) return;
     if (!els.modalBody.querySelector(".town-box")) return;
+    unmountGarden();
     els.modalBody.innerHTML = townMarkup();
+    mountTownGarden();
     updateTownButton();
   }
 
