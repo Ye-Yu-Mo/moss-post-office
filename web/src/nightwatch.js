@@ -143,11 +143,92 @@ const RECIPES = [
 ];
 
 const ENEMIES = {
-  fog: { name: "雾团", icon: "mist", hp: 70, speed: 0.3, damage: 16 },
-  damp: { name: "湿信", icon: "letter", hp: 46, speed: 0.62, damage: 11 },
-  ink: { name: "墨鬼", icon: "seal", hp: 230, speed: 0.2, damage: 30 },
-  moth: { name: "夜蛾", icon: "plane", hp: 90, speed: 0.52, damage: 14, flying: true },
-  bus: { name: "夜班车", icon: "van", hp: 900, speed: 0.12, damage: 60, boss: true }
+  fog: {
+    name: "雾团",
+    icon: "mist",
+    hp: 70,
+    speed: 0.3,
+    damage: 16,
+    unlockNight: 1,
+    desc: "最普通的影子，慢慢往门板挪。"
+  },
+  damp: {
+    name: "湿信",
+    icon: "letter",
+    hp: 46,
+    speed: 0.62,
+    damage: 11,
+    unlockNight: 1,
+    desc: "跑得快，血薄，容易漏过去。"
+  },
+  ink: {
+    name: "墨鬼",
+    icon: "seal",
+    hp: 230,
+    speed: 0.2,
+    damage: 30,
+    unlockNight: 2,
+    desc: "又慢又厚，得靠减速和穿行。"
+  },
+  moth: {
+    name: "夜蛾",
+    icon: "plane",
+    hp: 90,
+    speed: 0.52,
+    damage: 14,
+    flying: true,
+    unlockNight: 3,
+    desc: "飞过植物，墙挡不住它。"
+  },
+  split: {
+    name: "分裂墨团",
+    icon: "cloud",
+    hp: 170,
+    speed: 0.24,
+    damage: 20,
+    split: true,
+    unlockNight: 4,
+    desc: "倒下时裂成两只小墨点。"
+  },
+  blob: {
+    name: "小墨点",
+    icon: "glue",
+    hp: 55,
+    speed: 0.58,
+    damage: 8,
+    unlockNight: 0,
+    desc: "分裂墨团留下的碎片。"
+  },
+  drum: {
+    name: "鼓手",
+    icon: "bell",
+    hp: 130,
+    speed: 0.28,
+    damage: 12,
+    aura: true,
+    unlockNight: 6,
+    desc: "给同一行附近的影子加速。"
+  },
+  rat: {
+    name: "夜鼠",
+    icon: "snail",
+    hp: 80,
+    speed: 0.78,
+    damage: 8,
+    thief: true,
+    unlockNight: 8,
+    desc: "不撞门板，专偷灯油。"
+  },
+  bus: {
+    name: "夜班车",
+    icon: "van",
+    hp: 900,
+    speed: 0.12,
+    damage: 60,
+    boss: true,
+    unlockNight: 5,
+    desc: "每 5 夜的最后一波，很厚。"
+  }
 };
 
 const UNITS = { ...TOWERS };
@@ -207,10 +288,10 @@ export const NW_TOWER_LIST = Object.entries(TOWERS).map(([id, def]) => ({
   ...def
 }));
 export const NW_RECIPE_LIST = RECIPES.map((recipe) => ({ ...recipe }));
-export const NW_ENEMY_LIST = Object.entries(ENEMIES).map(([id, def]) => ({
-  id,
-  ...def
-}));
+export const NW_ENEMY_LIST = Object.entries(ENEMIES)
+  .filter(([id]) => id !== "blob")
+  .map(([id, def]) => ({ id, ...def }))
+  .sort((a, b) => a.unlockNight - b.unlockNight || a.hp - b.hp);
 
 export function nightWaveCount(level) {
   return Math.min(6, 4 + Math.floor((Math.max(1, level) - 1) / 3));
@@ -281,6 +362,7 @@ export function createNightWatch({
   let nextId = 1;
   let simTime = 0;
   let result = null;
+  let notices = [];
 
   function waveGap() {
     return Math.max(1.15, 2.5 - nightLevel * 0.06 - wave * 0.05);
@@ -292,9 +374,12 @@ export function createNightWatch({
     for (let i = 0; i < count; i += 1) {
       const roll = rng();
       let type = "fog";
-      if (nightLevel >= 2 && roll < 0.22) type = "ink";
-      else if (nightLevel >= 3 && roll < 0.42) type = "moth";
-      else if (index >= 1 && roll < 0.7) type = "damp";
+      if (nightLevel >= 8 && roll < 0.08) type = "rat";
+      else if (nightLevel >= 6 && roll < 0.18) type = "drum";
+      else if (nightLevel >= 4 && roll < 0.3) type = "split";
+      else if (nightLevel >= 3 && roll < 0.44) type = "moth";
+      else if (nightLevel >= 2 && roll < 0.58) type = "ink";
+      else if (index >= 1 && roll < 0.78) type = "damp";
       list.push(type);
     }
     if (nightLevel % 5 === 0 && index === waveTotal - 1) list.push("bus");
@@ -316,9 +401,15 @@ export function createNightWatch({
     return true;
   }
 
+  function notify(text) {
+    notices.push({ id: nextId++, text, at: simTime });
+    if (notices.length > 8) notices.shift();
+  }
+
   function spawnEnemy(type, rowOverride) {
     const def = ENEMIES[type];
     if (!def) return;
+    if (def.boss) notify("夜班车从雾里开出来了。");
     const hp = Math.round(def.hp * hpMul);
     const row = Number.isInteger(rowOverride)
       ? Math.max(0, Math.min(NW_LANES - 1, rowOverride))
@@ -424,6 +515,23 @@ export function createNightWatch({
     }
   }
 
+  function spawnBlob(parent) {
+    for (let index = 0; index < 2; index += 1) {
+      const hp = Math.max(1, Math.round(ENEMIES.blob.hp * hpMul));
+      enemies.push({
+        id: nextId++,
+        type: "blob",
+        row: parent.row,
+        x: Math.min(NW_COLS - 0.5, parent.x + (index ? 0.18 : -0.18)),
+        hp,
+        maxHp: hp,
+        attack: 0.5,
+        slowUntil: 0,
+        slowFactor: 1
+      });
+    }
+  }
+
   function blockingTower(enemy) {
     let blocker = null;
     for (const tower of towers) {
@@ -513,7 +621,7 @@ export function createNightWatch({
     for (const enemy of enemies) {
       const def = ENEMIES[enemy.type];
       if (!def) continue;
-      const blocker = def.flying ? null : blockingTower(enemy);
+      const blocker = def.flying || def.thief ? null : blockingTower(enemy);
       if (blocker) {
         enemy.attack -= dt;
         if (enemy.attack <= 0) {
@@ -522,17 +630,42 @@ export function createNightWatch({
         }
         continue;
       }
+      let boost = 1;
+      enemy.boosted = false;
+      if (!def.aura) {
+        for (const other of enemies) {
+          if (
+            other !== enemy &&
+            other.type === "drum" &&
+            other.row === enemy.row &&
+            Math.abs(other.x - enemy.x) <= 1.8
+          ) {
+            boost = 1.25;
+            enemy.boosted = true;
+            break;
+          }
+        }
+      }
       const slow = enemy.slowUntil > simTime ? enemy.slowFactor : 1;
-      enemy.x -= def.speed * speedMul * slow * dt;
+      enemy.x -= def.speed * speedMul * slow * boost * dt;
       if (enemy.x < -0.35) {
         enemy.hp = 0;
-        baseHp -= def.damage;
-        if (baseHp <= 0) baseHp = 0;
+        enemy.leaked = true;
+        if (def.thief) {
+          const stolen = Math.min(Math.floor(oil), 40);
+          oil -= stolen;
+          if (stolen > 0) notify(`夜鼠摸到门板，偷走了 ${stolen} 点灯油。`);
+        } else {
+          baseHp -= def.damage;
+          if (baseHp <= 0) baseHp = 0;
+        }
       }
     }
 
-    for (const enemy of enemies) {
-      if (enemy.hp <= 0) kills += 1;
+    const fallen = enemies.filter((enemy) => enemy.hp <= 0);
+    for (const enemy of fallen) {
+      kills += 1;
+      if (!enemy.leaked && enemy.type === "split") spawnBlob(enemy);
     }
     enemies = enemies.filter((enemy) => enemy.hp > 0);
     towers = towers.filter((tower) => tower.hp > 0);
@@ -658,6 +791,8 @@ export function createNightWatch({
         boss: Boolean(def.boss),
         flying: Boolean(def.flying),
         slowed: enemy.slowUntil > simTime,
+        boosted: Boolean(enemy.boosted),
+        thief: Boolean(def.thief),
         hp: Math.max(0, Math.round(enemy.hp)),
         maxHp: enemy.maxHp,
         percent: Math.max(0, Math.round((enemy.hp / enemy.maxHp) * 100))
@@ -708,6 +843,9 @@ export function createNightWatch({
               ? `奖励 -${Math.round((1 - mod.reward) * 100)}%`
               : ""
       },
+      notices: notices
+        .filter((notice) => simTime - notice.at < 2.5)
+        .map((notice) => ({ id: notice.id, text: notice.text })),
       spots: spots(),
       fusionHints:
         selected && TOWERS[selected]

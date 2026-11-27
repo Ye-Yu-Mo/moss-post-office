@@ -38,6 +38,7 @@ import {
   NW_RECIPE_LIST,
   NW_TALENTS,
   NW_MODIFIERS,
+  NW_ENEMY_LIST,
   dailyModifier,
   talentCost,
   talentBonus,
@@ -4535,6 +4536,7 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
   let nightSpeed = 1;
   let nightLevel = 1;
   let nightModifierOverride = "";
+  let nightNoticeId = 0;
 
   function currentNightModifier() {
     if (nightModifierOverride) {
@@ -4596,6 +4598,11 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
       recipeCount: recipes.filter((recipe) => recipe.unlocked).length,
       points: progress.points,
       modifier: nightModifierSnapshot(currentNightModifier()),
+      enemies: NW_ENEMY_LIST.map((enemy) => ({
+        ...enemy,
+        unlocked: enemy.unlockNight <= night
+      })),
+      enemyCount: NW_ENEMY_LIST.filter((enemy) => enemy.unlockNight <= night).length,
       talentSummary: nightTalentSummary(progress.talents),
       talents: NW_TALENTS.map((talent) => {
         const level = Math.max(
@@ -4669,7 +4676,14 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
   }
 
   function pushNightSnapshot() {
-    if (nightEngine) setNightWatchSnapshot(nightEngine.snapshot());
+    if (!nightEngine) return;
+    const snapshot = nightEngine.snapshot();
+    setNightWatchSnapshot(snapshot);
+    for (const notice of snapshot.notices || []) {
+      if (notice.id <= nightNoticeId) continue;
+      nightNoticeId = notice.id;
+      showToast(notice.text, 3000);
+    }
   }
 
   function stopNightClock() {
@@ -4681,6 +4695,7 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
     stopNightClock();
     nightLevel = Math.max(1, Math.floor(level));
     nightSpeed = 1;
+    nightNoticeId = 0;
     nightEngine = createNightWatch({
       level: nightLevel,
       talents: state.nightWatch.talents,

@@ -68,6 +68,24 @@
     </div>
 
     <div class="nw-section">
+      <div class="tree-head"><span>雾里的影子</span><span>{{ snapshot.enemyCount }} / {{ snapshot.enemies.length }} 种</span></div>
+      <div class="nw-enemy-codex">
+        <article
+          v-for="enemy in snapshot.enemies"
+          :key="enemy.id"
+          class="nw-enemy-card"
+          :class="{ 'is-locked': !enemy.unlocked }"
+        >
+          <span class="nw-enemy-codex-icon" v-html="icons[enemy.icon] || ''"></span>
+          <div>
+            <b>{{ enemy.name }}</b>
+            <small>{{ enemy.unlocked ? enemy.desc : `第 ${enemy.unlockNight} 夜出现 · ${enemy.desc}` }}</small>
+          </div>
+        </article>
+      </div>
+    </div>
+
+    <div class="nw-section">
       <div class="tree-head"><span>融合配方</span><span>{{ snapshot.recipeCount }} 种</span></div>
       <div class="nw-recipe-list">
         <article

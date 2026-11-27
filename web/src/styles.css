@@ -5627,6 +5627,53 @@ h3 {
   line-height: 1.5;
 }
 
+.nw-enemy-codex {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.nw-enemy-card {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+}
+
+.nw-enemy-card.is-locked {
+  opacity: 0.55;
+}
+
+.nw-enemy-codex-icon {
+  font-size: 20px;
+  line-height: 1.1;
+  flex: 0 0 auto;
+}
+
+.nw-enemy-codex-icon .s-icon {
+  width: 1em;
+  height: 1em;
+}
+
+.nw-enemy-card b {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--ink);
+}
+
+.nw-enemy-card small {
+  display: block;
+  margin-top: 1px;
+  color: var(--muted);
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
 .nw-recipe-list {
   display: flex;
   flex-direction: column;
@@ -5990,6 +6037,31 @@ h3 {
   filter: hue-rotate(-35deg) saturate(0.8);
 }
 
+.nw-enemy-split .nw-enemy-icon {
+  filter: hue-rotate(200deg) saturate(0.65) brightness(0.95);
+}
+
+.nw-enemy-blob .nw-enemy-icon {
+  filter: hue-rotate(180deg) saturate(0.5) brightness(0.9);
+}
+
+.nw-enemy-drum .nw-enemy-icon {
+  filter: hue-rotate(35deg) saturate(1.1);
+}
+
+.nw-enemy-rat .nw-enemy-icon {
+  filter: hue-rotate(-70deg) saturate(1.15) brightness(0.95);
+}
+
+.nw-enemy.is-boosted {
+  filter: drop-shadow(0 0 7px rgba(242, 200, 109, 0.8));
+}
+
+.nw-enemy-blob {
+  width: 7%;
+  font-size: clamp(12px, 2.2vw, 20px);
+}
+
 .nw-enemy.is-slowed {
   opacity: 0.75;
 }
@@ -6183,7 +6255,8 @@ h3 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .nw-talent-grid {
+  .nw-talent-grid,
+  .nw-enemy-codex {
     grid-template-columns: 1fr;
   }
 

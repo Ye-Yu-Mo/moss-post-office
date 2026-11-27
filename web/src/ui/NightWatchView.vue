@@ -53,7 +53,7 @@
           v-for="enemy in snapshot.enemies"
           :key="enemy.id"
           class="nw-enemy"
-          :class="['nw-enemy-' + enemy.type, { 'is-slowed': enemy.slowed, 'is-boss': enemy.boss }]"
+          :class="['nw-enemy-' + enemy.type, { 'is-slowed': enemy.slowed, 'is-boss': enemy.boss, 'is-boosted': enemy.boosted }]"
           :style="enemyStyle(enemy)"
         >
           <span class="nw-enemy-icon" v-html="icons[enemy.icon] || ''"></span>
@@ -76,6 +76,7 @@
         <h4>第 {{ snapshot.level }} 夜</h4>
         <p>雾从邮路尽头漫上来。把信封草、邮票花和彩纸藤种在格子里，别让影子摸到门板。</p>
         <p class="nw-overlay-note">相同的两株、或者有配方的两株，种在同一格就能融合。</p>
+        <p class="nw-overlay-note">夜蛾飞过墙，夜鼠偷灯油，鼓手会给同伴加速。</p>
         <p v-if="snapshot.modifier.name" class="nw-overlay-note">
           今日词条「{{ snapshot.modifier.name }}」：{{ snapshot.modifier.desc }}{{ snapshot.modifier.rewardText ? ` · ${snapshot.modifier.rewardText}` : "" }}
         </p>
