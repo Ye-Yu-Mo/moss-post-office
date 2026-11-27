@@ -10,6 +10,8 @@ import { mountMoon, unmountMoon } from "./ui/mountMoon.js";
 import { setMoonSnapshot } from "./ui/moonStore.js";
 import { mountWorkshop, unmountWorkshop } from "./ui/mountWorkshop.js";
 import { setWorkshopSnapshot } from "./ui/workshopStore.js";
+import { mountExpedition, unmountExpedition } from "./ui/mountExpedition.js";
+import { setExpeditionSnapshot } from "./ui/expeditionStore.js";
 
 (() => {
   "use strict";
@@ -3629,166 +3631,6 @@ import { setWorkshopSnapshot } from "./ui/workshopStore.js";
       </div>`;
   }
 
-  function expeditionProgressMarkup() {
-    return Array.from({ length: 6 }, (_, index) => {
-      const stage = index + 1;
-      const current = state.expedition.stage;
-      const cls = stage < current ? "is-done" : stage === current ? "is-current" : "";
-      return `<span class="exp-pip ${cls}" aria-hidden="true">${stage}</span>`;
-    }).join("");
-  }
-
-  function expeditionOptionsMarkup() {
-    const exp = state.expedition;
-    if (!exp.options.length) exp.options = expeditionOptions(exp.stage);
-    return `
-      <p class="exp-lead">第 ${exp.stage} 段 · 选一条路</p>
-      <div class="exp-options">
-        ${exp.options.map((option, index) => `
-          <button class="exp-option" type="button" data-exp-option="${index}">
-            <span class="exp-tag">${expeditionOptionTag(option)}</span>
-            <b>${option.title}</b>
-            <p>${option.desc}</p>
-            <small>${option.kind === "hazard" || option.kind === "boss" || option.kind === "elite"
-              ? `需要 ${option.need} 通行 · 回信 +${formatNumber(option.stamps)} 邮票 · +${option.ink} 墨点${option.kind === "elite" ? " · 胜后挑一张牌" : ""}`
-              : option.kind === "camp"
-                ? "补信件 / 补干粮 / 加一张牌"
-                : option.kind === "trade"
-                  ? "用邮票或墨点换补给"
-                  : "会遇到一个人，做一次选择"}</small>
-          </button>`).join("")}
-      </div>`;
-  }
-
-  function expeditionHazardMarkup() {
-    const exp = state.expedition;
-    const current = exp.current;
-    const tag = expeditionOptionTag(current);
-    const selected = [...new Set(expSelection)];
-    const power = expeditionSelectedPower();
-    const hasDetour = selected.some((index) => EXP_CARDS[exp.hand[index]] && EXP_CARDS[exp.hand[index]].skip);
-    const hasShield = selected.some((index) => EXP_CARDS[exp.hand[index]] && EXP_CARDS[exp.hand[index]].shield);
-    const cards = exp.hand.map((cardId, index) => {
-      const card = EXP_CARDS[cardId];
-      const disabled = (card.supplyCost || 0) > exp.supplies;
-      const isSelected = selected.includes(index);
-      const match = card.tag !== "any" && card.tag === current.tag;
-      return `
-        <button class="exp-card${isSelected ? " is-selected" : ""}${match ? " is-match" : ""}" type="button" data-exp-card="${index}" ${disabled ? "disabled" : ""}>
-          <span class="exp-card-name">${card.name}</span>
-          <small>${card.desc}</small>
-          <b>+${expeditionCardPower(cardId, current)}</b>
-        </button>`;
-    }).join("");
-    return `
-      <div class="exp-encounter">
-        <span class="exp-tag">${tag} · 需要 ${current.need}</span>
-        <h4>${current.title}</h4>
-        <p>${current.desc}</p>
-        ${exp.hand.length
-          ? `<div class="exp-hand">${cards}</div>`
-          : `<p class="exp-empty">背囊空了，只能硬着头皮往前走。</p>`}
-        <div class="exp-total">${hasDetour
-          ? "绕路：跳过这处路障，耗 1 份干粮"
-          : `已选 ${selected.length} / 2 · 通行 <b>${power}</b> / ${current.need}${hasShield ? " · 护信生效" : ""}`}</div>
-        <button class="exp-primary" type="button" data-exp-resolve ${exp.hand.length && selected.length ? "" : "disabled"}>${hasDetour ? "绕路前进" : "投递这封信"}</button>
-        ${exp.hand.length
-          ? `<p class="exp-hint">同类牌有额外加成；“护信”失败时保住一封信；“绕路”直接跳过路障，但耗 1 干粮。</p>`
-          : `<button class="exp-primary exp-danger" type="button" data-exp-resolve-empty>硬着头皮走</button>`}
-      </div>`;
-  }
-
-  function expeditionCardChoiceMarkup() {
-    const exp = state.expedition;
-    const choice = exp.cardChoice;
-    if (!choice) return "";
-    const trade = choice.source === "trade";
-    const elite = choice.source === "elite";
-    return `
-      <div class="exp-encounter">
-        <span class="exp-tag">${elite ? "精英" : trade ? "集市" : "营地"}</span>
-        <h4>${elite ? "旧哨站的战利品" : trade ? "货郎摊开三张牌" : "挑一张带走的牌"}</h4>
-        <p>${elite ? "旧哨站里翻出三张还能用的牌。你只能带走一张。" : trade ? "“只换不卖。选一张，付 20 墨点。”" : "火还亮着，你可以从邮袋里挑一张牌塞进背囊。"}</p>
-        <div class="exp-hand exp-card-choice">
-          ${choice.options.map((cardId, index) => {
-            const card = EXP_CARDS[cardId];
-            return `
-              <button class="exp-card" type="button" data-exp-pick-card="${index}">
-                <span class="exp-card-name">${card.name}</span>
-                <small>${card.desc}</small>
-                <b>+${card.power}</b>
-              </button>`;
-          }).join("")}
-        </div>
-        <p class="exp-hint">${trade ? "选好后付 20 墨点；现有 " + formatNumber(state.ink) + " 墨点。" : elite ? "胜者先挑，牌会留在这一趟的背囊里。" : "免费带走一张，牌会留在这一趟的背囊里。"}</p>
-      </div>`;
-  }
-
-  function expeditionCampMarkup() {
-    const exp = state.expedition;
-    if (exp.cardChoice) return expeditionCardChoiceMarkup();
-    return `
-      <div class="exp-encounter">
-        <span class="exp-tag">营地</span>
-        <h4>路边营地</h4>
-        <p>火升起来了。你可以在天亮前做一件事。</p>
-        <div class="exp-choices">
-          <button class="exp-choice" type="button" data-exp-camp="heal" ${exp.letters >= expeditionMaxLetters() ? "disabled" : ""}>
-            <b>补 1 封信</b><span>信件 ${exp.letters} / ${expeditionMaxLetters()}${exp.letters >= expeditionMaxLetters() ? " · 已经满了" : ""}</span>
-          </button>
-          <button class="exp-choice" type="button" data-exp-camp="supply" ${exp.supplies >= 9 ? "disabled" : ""}>
-            <b>补 2 份干粮</b><span>干粮 ${exp.supplies}${exp.supplies >= 9 ? " · 背不动了" : ""}</span>
-          </button>
-          <button class="exp-choice" type="button" data-exp-camp="card">
-            <b>往背囊里塞 1 张牌</b><span>从三张里挑一张</span>
-          </button>
-        </div>
-      </div>`;
-  }
-
-  function expeditionTradeMarkup() {
-    const exp = state.expedition;
-    if (exp.cardChoice) return expeditionCardChoiceMarkup();
-    return `
-      <div class="exp-encounter">
-        <span class="exp-tag">集市</span>
-        <h4>湖边集市</h4>
-        <p>货郎把布摊开：“只换不卖。换完你就得赶路了。”</p>
-        <div class="exp-choices">
-          <button class="exp-choice" type="button" data-exp-trade="supply" ${state.stamps < 80 ? "disabled" : ""}>
-            <b>80 邮票 → 2 份干粮</b><span>${state.stamps < 80 ? "邮票不够" : `干粮 ${exp.supplies} / 9`}</span>
-          </button>
-          <button class="exp-choice" type="button" data-exp-trade="card" ${state.ink < 20 ? "disabled" : ""}>
-            <b>20 墨点 → 三选一</b><span>${state.ink < 20 ? "墨点不够" : `现有 ${state.ink} 墨点`}</span>
-          </button>
-          <button class="exp-choice" type="button" data-exp-trade="leave">
-            <b>不换了</b><span>继续赶路</span>
-          </button>
-        </div>
-      </div>`;
-  }
-
-  function expeditionEventMarkup() {
-    const exp = state.expedition;
-    const event = EXP_EVENTS.find((candidate) => candidate.id === exp.current.eventId) || EXP_EVENTS[0];
-    return `
-      <div class="exp-encounter">
-        <span class="exp-tag">路遇</span>
-        <h4>${event.title}</h4>
-        <p>${event.text}</p>
-        <div class="exp-choices">
-          ${event.choices.map((choice, index) => {
-            const cost = choice.cost && choice.cost.supplies ? choice.cost.supplies : 0;
-            return `
-              <button class="exp-choice" type="button" data-exp-event="${index}" ${cost > exp.supplies ? "disabled" : ""}>
-                <b>${choice.label}</b>
-                <span>${cost ? `耗 ${cost} 干粮` : "不耗干粮"}${cost > exp.supplies ? " · 干粮不够" : ""}</span>
-              </button>`;
-          }).join("")}
-        </div>
-      </div>`;
-  }
-
   function expeditionRewardCardId() {
     const unlocked = expeditionUnlockedCardPool();
     const advanced = unlocked.filter((id) => !EXP_STARTER.includes(id));
@@ -3891,97 +3733,224 @@ import { setWorkshopSnapshot } from "./ui/workshopStore.js";
     renderExpedition();
   }
 
-  function expeditionResultMarkup() {
-    const result = state.expedition.result;
-    const rewards = Array.isArray(result.rewards) ? result.rewards : [];
-    const picked = result.rewardPicked !== undefined && result.rewardPicked !== null;
-    const unlocked = Array.isArray(result.unlocked) ? result.unlocked : [];
-    const gainedMaterials = materialGainText(result.materials);
-    const relics = state.expeditionRelics
-      .map((id) => EXP_RELICS[id] && EXP_RELICS[id].name)
-      .filter(Boolean);
-    const rewardMarkup = rewards.length && !picked
-      ? `
-        <div class="exp-rewards">
-          <p class="exp-lead">选一样带回邮局</p>
-          <div class="exp-choices">
-            ${rewards.map((reward, index) => `
-              <button class="exp-choice exp-reward" type="button" data-exp-reward="${index}">
-                <b>${reward.name}</b>
-                <span>${reward.desc}</span>
-              </button>`).join("")}
-          </div>
-        </div>`
-      : "";
-    return `
-      <div class="exp-result ${result.success ? "is-win" : "is-lose"}">
-        <span class="exp-tag">${result.success ? "抵达星港" : "信留在了路上"}</span>
-        <h4>${result.success ? "最后一班星船赶上了" : "这一趟只能到这里"}</h4>
-        <p>带回 ${formatNumber(result.stamps)} 张邮票、${formatNumber(result.ink)} 墨点${result.moon ? `、${result.moon} 枚月光邮戳` : ""}${gainedMaterials ? `、${gainedMaterials}` : ""}。</p>
-        <p>${result.success ? "远行成功次数 +1。材料可以下次行前使用。下一趟会遇到新的路。" : "失败只带回 30% 的邮袋，材料留在了路上；下一次会更好。"}</p>
-        ${unlocked.length ? `<p class="exp-unlock">新牌解锁：${unlocked.join("、")}</p>` : ""}
-        <p class="exp-meta">背囊 ${state.expeditionDeck.length} 张${relics.length ? ` · 遗物 ${relics.join("、")}` : ""}</p>
-        ${rewardMarkup}
-        ${picked ? `<p class="exp-reward-picked">已收下「${result.rewardName || "奖励"}」。</p>` : ""}
-        ${rewards.length && !picked
-          ? `<p class="exp-hint">先选一样，再决定下一趟。</p>`
-          : `<div class="exp-result-actions">
-              <button class="exp-primary" type="button" data-exp-restart>再来一趟</button>
-              <button class="exp-secondary" type="button" data-exp-finish>回到邮局</button>
-            </div>`}
-      </div>`;
-  }
-
-  function expeditionMarkup() {
+  function expeditionSnapshot() {
     const exp = state.expedition;
-    if (!exp) return "";
-    if (!exp.result && exp.current && (exp.current.kind === "hazard" || exp.current.kind === "boss" || exp.current.kind === "elite") && !exp.hand.length) {
+    if (!exp) return null;
+    if (
+      !exp.result &&
+      exp.current &&
+      (exp.current.kind === "hazard" || exp.current.kind === "boss" || exp.current.kind === "elite") &&
+      !exp.hand.length
+    ) {
       expeditionDrawHand();
     }
+
+    const selected = [...new Set(expSelection)];
     const maxLetters = Math.max(expeditionMaxLetters(), exp.letters);
-    const hearts = "♥".repeat(Math.max(0, exp.letters)) + "♡".repeat(Math.max(0, maxLetters - exp.letters));
-    let body = "";
-    if (exp.result) body = expeditionResultMarkup();
-    else if (exp.cardChoice) body = expeditionCardChoiceMarkup();
-    else if (!exp.current) body = expeditionOptionsMarkup();
-    else if (exp.current.kind === "camp") body = expeditionCampMarkup();
-    else if (exp.current.kind === "trade") body = expeditionTradeMarkup();
-    else if (exp.current.kind === "event") body = expeditionEventMarkup();
-    else body = expeditionHazardMarkup();
-    const log = exp.log.slice(0, 5).map((line) => `<li>${line}</li>`).join("");
-    const lootStamps = exp.result ? exp.result.stamps : exp.loot.stamps;
-    const lootInk = exp.result ? exp.result.ink : exp.loot.ink;
-    return `
-      <div class="exp-shell">
-        <div class="exp-head">
-          <span class="exp-stat"><small>信件</small><b class="exp-hearts">${hearts}</b></span>
-          <span class="exp-stat"><small>干粮</small><b>${exp.supplies}</b></span>
-          <span class="exp-stat"><small>背囊</small><b>${exp.deck.length + exp.hand.length + exp.discard.length} 张</b></span>
-          <span class="exp-stat exp-loot"><small>路上的邮袋</small><b>+${formatNumber(lootStamps)} 邮票 · +${formatNumber(lootInk)} 墨点</b></span>
-        </div>
-        <div class="exp-progress" aria-label="第 ${exp.stage} 段，共 6 段">${expeditionProgressMarkup()}</div>
-        <div class="exp-stage">${body}</div>
-        <div class="exp-log"><span>手记</span><ul>${log || "<li>路还很长。</li>"}</ul></div>
-        <div class="exp-foot">
-          <button class="link-btn" type="button" data-exp-close>收起</button>
-          ${!exp.result ? `<button class="link-btn exp-warn" type="button" data-exp-abandon>放弃这趟</button>` : ""}
-        </div>
-        ${expConfirmAbandon ? `
-          <div class="exp-confirm">
-            <p>放弃这趟会把邮袋留在路上，什么也带不回来。确定吗？</p>
-            <div>
-              <button class="link-btn exp-warn" type="button" data-exp-abandon-confirm>确认放弃</button>
-              <button class="link-btn" type="button" data-exp-abandon-cancel>再想想</button>
-            </div>
-          </div>` : ""}
-      </div>`;
+    const hearts =
+      "♥".repeat(Math.max(0, exp.letters)) +
+      "♡".repeat(Math.max(0, maxLetters - exp.letters));
+    const current = exp.current;
+    const cards = exp.hand.map((cardId, index) => {
+      const card = EXP_CARDS[cardId];
+      return {
+        index,
+        name: card.name,
+        desc: card.desc,
+        power: expeditionCardPower(cardId, current),
+        match: Boolean(current && card.tag !== "any" && card.tag === current.tag),
+        selected: selected.includes(index),
+        disabled: (card.supplyCost || 0) > exp.supplies
+      };
+    });
+    const selectedCards = selected.map((index) => EXP_CARDS[exp.hand[index]]).filter(Boolean);
+    const hasDetour = selectedCards.some((card) => card.skip);
+    const hasShield = selectedCards.some((card) => card.shield);
+    const pips = Array.from({ length: 6 }, (_, index) => {
+      const stage = index + 1;
+      return {
+        stage,
+        className:
+          stage < exp.stage ? "is-done" : stage === exp.stage ? "is-current" : ""
+      };
+    });
+
+    const options = exp.options.map((option) => {
+      let note = "";
+      if (option.kind === "hazard" || option.kind === "boss" || option.kind === "elite") {
+        note = `需要 ${option.need} 通行 · 回信 +${formatNumber(option.stamps)} 邮票 · +${option.ink} 墨点${option.kind === "elite" ? " · 胜后挑一张牌" : ""}`;
+      } else if (option.kind === "camp") {
+        note = "补信件 / 补干粮 / 加一张牌";
+      } else if (option.kind === "trade") {
+        note = "用邮票或墨点换补给";
+      } else {
+        note = "会遇到一个人，做一次选择";
+      }
+      return {
+        tag: expeditionOptionTag(option),
+        title: option.title,
+        desc: option.desc,
+        note
+      };
+    });
+
+    let event = null;
+    if (current && current.kind === "event") {
+      const data = EXP_EVENTS.find((candidate) => candidate.id === current.eventId) || EXP_EVENTS[0];
+      event = {
+        title: data.title,
+        text: data.text,
+        choices: data.choices.map((choice) => {
+          const cost = choice.cost && choice.cost.supplies ? choice.cost.supplies : 0;
+          return {
+            label: choice.label,
+            note: `${cost ? `耗 ${cost} 干粮` : "不耗干粮"}${cost > exp.supplies ? " · 干粮不够" : ""}`,
+            disabled: cost > exp.supplies
+          };
+        })
+      };
+    }
+
+    let cardChoice = null;
+    if (exp.cardChoice) {
+      const trade = exp.cardChoice.source === "trade";
+      const elite = exp.cardChoice.source === "elite";
+      cardChoice = {
+        tag: elite ? "精英" : trade ? "集市" : "营地",
+        title: elite ? "旧哨站的战利品" : trade ? "货郎摊开三张牌" : "挑一张带走的牌",
+        desc: elite
+          ? "旧哨站里翻出三张还能用的牌。你只能带走一张。"
+          : trade
+            ? "“只换不卖。选一张，付 20 墨点。”"
+            : "火还亮着，你可以从邮袋里挑一张牌塞进背囊。",
+        hint: trade
+          ? `选好后付 20 墨点；现有 ${formatNumber(state.ink)} 墨点。`
+          : elite
+            ? "胜者先挑，牌会留在这一趟的背囊里。"
+            : "免费带走一张，牌会留在这一趟的背囊里。",
+        cards: exp.cardChoice.options.map((cardId) => {
+          const card = EXP_CARDS[cardId];
+          return { name: card.name, desc: card.desc, power: card.power };
+        })
+      };
+    }
+
+    let result = null;
+    if (exp.result) {
+      const stored = exp.result;
+      const materialText = materialGainText(stored.materials);
+      const rewards = Array.isArray(stored.rewards) ? stored.rewards : [];
+      const picked = stored.rewardPicked !== undefined && stored.rewardPicked !== null;
+      const relicNames = state.expeditionRelics
+        .map((id) => EXP_RELICS[id] && EXP_RELICS[id].name)
+        .filter(Boolean);
+      const unlocked = Array.isArray(stored.unlocked) ? stored.unlocked : [];
+      result = {
+        success: Boolean(stored.success),
+        tag: stored.success ? "抵达星港" : "信留在了路上",
+        title: stored.success ? "最后一班星船赶上了" : "这一趟只能到这里",
+        rewardText: `带回 ${formatNumber(stored.stamps)} 张邮票、${formatNumber(stored.ink)} 墨点${stored.moon ? `、${stored.moon} 枚月光邮戳` : ""}${materialText ? `、${materialText}` : ""}。`,
+        summary: stored.success
+          ? "远行成功次数 +1。材料可以下次行前使用。下一趟会遇到新的路。"
+          : "失败只带回 30% 的邮袋，材料留在了路上；下一次会更好。",
+        unlockedText: unlocked.length ? `新牌解锁：${unlocked.join("、")}` : "",
+        metaText: `背囊 ${state.expeditionDeck.length} 张${relicNames.length ? ` · 遗物 ${relicNames.join("、")}` : ""}`,
+        rewards,
+        picked,
+        rewardName: stored.rewardName || "奖励"
+      };
+    }
+
+    return {
+      stage: exp.stage,
+      pips,
+      hearts,
+      supplies: exp.supplies,
+      deckCount: exp.deck.length + exp.hand.length + exp.discard.length,
+      lootStamps: formatNumber(exp.result ? exp.result.stamps : exp.loot.stamps),
+      lootInk: formatNumber(exp.result ? exp.result.ink : exp.loot.ink),
+      log: exp.log.slice(0, 5),
+      options,
+      current: current
+        ? {
+            kind: current.kind,
+            tag: expeditionOptionTag(current),
+            title: current.title,
+            desc: current.desc,
+            need: current.need
+          }
+        : null,
+      camp:
+        current && current.kind === "camp"
+          ? {
+              letters: exp.letters,
+              maxLetters: expeditionMaxLetters(),
+              supplies: exp.supplies,
+              healDisabled: exp.letters >= expeditionMaxLetters(),
+              supplyDisabled: exp.supplies >= 9
+            }
+          : null,
+      trade:
+        current && current.kind === "trade"
+          ? {
+              stamps: state.stamps,
+              ink: state.ink,
+              supplies: exp.supplies,
+              supplyDisabled: state.stamps < 80,
+              cardDisabled: state.ink < 20
+            }
+          : null,
+      event,
+      cardChoice,
+      hand: cards,
+      selectedCount: selected.length,
+      selectedPower: expeditionSelectedPower(),
+      hasDetour,
+      hasShield,
+      canResolve: Boolean(cards.length && selected.length),
+      result,
+      confirmAbandon: expConfirmAbandon
+    };
+  }
+
+  function expeditionHandlers() {
+    return {
+      onClose: () => closeModal(),
+      onAbandon: () => {
+        expConfirmAbandon = true;
+        renderExpedition();
+      },
+      onAbandonConfirm: () => abandonExpedition(),
+      onAbandonCancel: () => {
+        expConfirmAbandon = false;
+        renderExpedition();
+      },
+      onOption: (index) => chooseExpeditionOption(index),
+      onCard: (index) => toggleExpeditionCard(index),
+      onResolve: () => resolveExpedition(),
+      onCamp: (choice) => expeditionCamp(choice),
+      onTrade: (choice) => expeditionTrade(choice),
+      onEvent: (index) => expeditionEventChoice(index),
+      onPickCard: (index) => chooseExpeditionCard(index),
+      onClaimReward: (index) => claimExpeditionReward(index),
+      onRestart: () => restartExpedition(),
+      onFinish: () => closeExpeditionResult()
+    };
   }
 
   function renderExpedition() {
     if (!state || !state.expedition || els.modal.hidden) return;
     els.modalTitle.textContent = state.expedition.result ? "远行结算" : "雾湖远行";
-    els.modalBody.innerHTML = expeditionMarkup();
-    const focusTarget = els.modalBody.querySelector("[data-exp-focus], .exp-primary, .exp-option, .exp-result-actions button");
+    let root = els.modalBody.querySelector("[data-expedition-root]");
+    if (!root) {
+      els.modalBody.innerHTML = `<div data-expedition-root></div>`;
+      root = els.modalBody.querySelector("[data-expedition-root]");
+      mountExpedition(root, expeditionHandlers());
+    }
+    setExpeditionSnapshot(expeditionSnapshot());
+    const focusTarget = els.modalBody.querySelector(
+      ".exp-primary, .exp-option, .exp-result-actions button"
+    );
     if (focusTarget) focusTarget.focus({ preventScroll: true });
   }
 
@@ -4061,11 +4030,13 @@ import { setWorkshopSnapshot } from "./ui/workshopStore.js";
     if (!state.expedition.result) state.expedition.active = true;
     openModal({
       title: state.expedition.result ? "远行结算" : "雾湖远行",
-      body: expeditionMarkup(),
+      body: `<div data-expedition-root></div>`,
       footer: false,
       wide: true,
       kicker: "苔藓邮局 · 远行"
     });
+    mountExpedition(els.modalBody.querySelector("[data-expedition-root]"), expeditionHandlers());
+    setExpeditionSnapshot(expeditionSnapshot());
     if (!state.expedition.result) saveGame();
     const focusTarget = els.modalBody.querySelector(".exp-option, .exp-primary, .exp-result-actions button");
     if (focusTarget) focusTarget.focus({ preventScroll: true });
@@ -5357,6 +5328,7 @@ import { setWorkshopSnapshot } from "./ui/workshopStore.js";
   function openModal(options) {
     unmountTown();
     unmountAccount();
+    unmountExpedition();
     modalAction = typeof options.action === "function" ? options.action : null;
     modalReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     els.modalTitle.textContent = options.title;
@@ -5387,6 +5359,7 @@ import { setWorkshopSnapshot } from "./ui/workshopStore.js";
     if (els.modal.hidden) return;
     unmountTown();
     unmountAccount();
+    unmountExpedition();
     els.modal.hidden = true;
     document.body.style.overflow = "";
     modalAction = null;
