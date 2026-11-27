@@ -6763,6 +6763,24 @@ h3 {
 }
 
 .nw-deep-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  border-radius: 10px;
   background: rgba(159, 150, 199, 0.14);
+  color: #5b5285;
+}
+
+.nw-deep-note p {
+  margin: 0;
+  flex: 1 1 220px;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.nw-deep-note .link-btn {
+  flex: 0 0 auto;
   color: #5b5285;
 }

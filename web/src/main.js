@@ -41,6 +41,7 @@ import {
   NW_ENEMY_LIST,
   dailyModifier,
   deepFogFor,
+  NW_DEEP_FOG,
   talentCost,
   talentBonus,
   NW_LANES,
@@ -319,7 +320,10 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
   const NIGHT_MEDALS = [
     { level: 5, template: "night_5", name: "守夜铜戳", edition: 100, icon: "bell", desc: "守住第 5 夜的纪念。" },
     { level: 10, template: "night_10", name: "守夜银戳", edition: 50, icon: "star", desc: "守住第 10 夜的纪念。" },
-    { level: 15, template: "night_15", name: "守夜金戳", edition: 25, icon: "sun", desc: "守住第 15 夜的纪念。" }
+    { level: 15, template: "night_15", name: "守夜金戳", edition: 25, icon: "sun", desc: "守住第 15 夜的纪念。" },
+    { level: 20, template: "deep_20", name: "深雾铜灯", edition: 50, icon: "mist", desc: "守住第 20 夜的纪念。" },
+    { level: 25, template: "deep_25", name: "深雾银钟", edition: 30, icon: "bell", desc: "守住第 25 夜的纪念。" },
+    { level: 30, template: "deep_30", name: "深雾金星", edition: 15, icon: "star", desc: "守住第 30 夜的纪念。" }
   ];
 
   const WEATHER_DURATION = 150000;
@@ -1276,7 +1280,7 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
 
   function createInitialState(sound = true) {
     return {
-      version: 15,
+      version: 16,
       stamps: 0,
       runEarned: 0,
       totalEarned: 0,
@@ -1315,7 +1319,8 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
         pendingMedals: [],
         modifier: null,
         history: [],
-        fusions: []
+        fusions: [],
+        deepChoice: { night: 0, id: "" }
       },
       gens: Object.fromEntries(GENERATORS.map((gen) => [gen.id, 0])),
       boughtTotal: Object.fromEntries(GENERATORS.map((gen) => [gen.id, 0])),
@@ -1452,6 +1457,17 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
             at: numberOr(run.at)
           }))
           .slice(0, 20);
+      }
+      const savedDeep = raw.nightWatch.deepChoice;
+      if (
+        savedDeep &&
+        Number.isFinite(Number(savedDeep.night)) &&
+        NW_DEEP_FOG.some((deep) => deep.id === savedDeep.id)
+      ) {
+        clean.nightWatch.deepChoice = {
+          night: Math.max(0, Math.floor(Number(savedDeep.night))),
+          id: savedDeep.id
+        };
       }
       const savedModifier = raw.nightWatch.modifier;
       if (
@@ -4660,6 +4676,38 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
     return dailyModifier();
   }
 
+  function effectiveDeepFog(level) {
+    if (!state || level < 16) return null;
+    const choice = state.nightWatch.deepChoice;
+    if (choice && choice.night === level) {
+      const found = NW_DEEP_FOG.find((deep) => deep.id === choice.id);
+      if (found) return found;
+    }
+    return deepFogFor(level);
+  }
+
+  function rerollNightDeep() {
+    if (!state) return;
+    const progress = state.nightWatch;
+    const level = Math.max(1, progress.night);
+    if (level < 16) return;
+    if (progress.points < 1) {
+      playDenySound();
+      showToast("换雾层要 1 点守夜天赋。", 2400);
+      return;
+    }
+    const current = effectiveDeepFog(level);
+    const pool = NW_DEEP_FOG.filter((deep) => !current || deep.id !== current.id);
+    const next = pool[Math.floor(Math.random() * pool.length)];
+    progress.points -= 1;
+    progress.deepChoice = { night: level, id: next.id };
+    saveGame();
+    refreshLive();
+    setNightPanelSnapshot(nightPanelSnapshot());
+    updateTabBadges();
+    showToast(`第 ${level} 夜的雾层换成了「深雾·${next.name}」，扣 1 点守夜天赋。`, 3800);
+  }
+
   function rerollNightModifier() {
     if (!state) return;
     const progress = state.nightWatch;
@@ -4729,9 +4777,14 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
       points: progress.points,
       deepUnlocked: (progress.best || 0) >= 15 || (progress.night || 1) >= 16,
       deepNext: (() => {
-        const deep = deepFogFor(Math.max(1, progress.night || 1));
+        const deep = effectiveDeepFog(Math.max(1, progress.night || 1));
         return deep
-          ? { name: `深雾·${deep.name}`, desc: deep.desc, rewardText: `奖励 ×${deep.reward}` }
+          ? {
+              name: `深雾·${deep.name}`,
+              desc: deep.desc,
+              rewardText: `奖励 ×${deep.reward}`,
+              canReroll: progress.points >= 1
+            }
           : null;
       })(),
       modifier: {
@@ -4796,6 +4849,8 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
     if (bonus.baseHp) parts.push(`门板 +${bonus.baseHp}`);
     if (bonus.drip) parts.push(`灯油 +${bonus.drip.toFixed(2)}/秒`);
     if (bonus.cooldown < 1) parts.push(`冷却 -${Math.round((1 - bonus.cooldown) * 100)}%`);
+    if (bonus.deepOil < 1) parts.push(`深雾油/冷惩罚 -${Math.round((1 - bonus.deepOil) * 100)}%`);
+    if (bonus.deepHp < 1) parts.push(`深雾血/速加成 -${Math.round((1 - bonus.deepHp) * 100)}%`);
     return parts.length ? `当前加成：${parts.join(" · ")}` : "还没有点天赋，先攒一点。";
   }
 
@@ -4808,7 +4863,8 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
       handlers: {
         onOpen: openNightWatch,
         onBuyTalent: buyNightTalent,
-        onRerollModifier: rerollNightModifier
+        onRerollModifier: rerollNightModifier,
+        onRerollDeep: rerollNightDeep
       },
       icons: ICONS
     });
@@ -4868,6 +4924,7 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
       level: nightLevel,
       talents: state.nightWatch.talents,
       modifier: currentNightModifier(),
+      deepFog: effectiveDeepFog(nightLevel),
       onFinish: handleNightFinish
     });
     pushNightSnapshot();

@@ -455,7 +455,9 @@ export const NW_TALENTS = [
   { id: "paper", name: "纸甲", icon: "letter", max: 3, desc: "植物生命 +10% / 级" },
   { id: "bulkhead", name: "门闩", icon: "mailbox", max: 3, desc: "门板 +12 点 / 级" },
   { id: "drip", name: "油壶", icon: "tea", max: 3, desc: "灯油自然增长 +0.35/秒 / 级" },
-  { id: "quick", name: "快笔", icon: "wind", max: 3, desc: "植物冷却 -6% / 级" }
+  { id: "quick", name: "快笔", icon: "wind", max: 3, desc: "植物冷却 -6% / 级" },
+  { id: "deepwick", name: "深灯", icon: "tea", max: 2, desc: "深雾的灯油与冷却惩罚减半 / 级" },
+  { id: "deepward", name: "雾墙", icon: "mailbox", max: 2, desc: "深雾的影子生命与速度加成减半 / 级" }
 ];
 
 // 天赋第 1/2/3 级分别要 1/2/3 点，一棵点满 6 点。
@@ -465,8 +467,12 @@ export function talentCost(level) {
 
 export function talentBonus(talents = {}) {
   const level = (id) => {
+    const def = NW_TALENTS.find((talent) => talent.id === id);
+    const max = def ? def.max : 3;
     const value = Number(talents && talents[id]);
-    return Number.isFinite(value) ? Math.max(0, Math.min(3, Math.floor(value))) : 0;
+    return Number.isFinite(value)
+      ? Math.max(0, Math.min(max, Math.floor(value)))
+      : 0;
   };
   return {
     startOil: 8 * level("wick"),
@@ -474,7 +480,9 @@ export function talentBonus(talents = {}) {
     hp: 1 + 0.1 * level("paper"),
     baseHp: 12 * level("bulkhead"),
     drip: 0.35 * level("drip"),
-    cooldown: 1 - 0.06 * level("quick")
+    cooldown: 1 - 0.06 * level("quick"),
+    deepOil: 1 - 0.5 * level("deepwick"),
+    deepHp: 1 - 0.5 * level("deepward")
   };
 }
 
@@ -519,6 +527,7 @@ export function createNightWatch({
   level = 1,
   talents = {},
   modifier = null,
+  deepFog = null,
   onFinish = () => {},
   rng = Math.random
 } = {}) {
@@ -544,7 +553,7 @@ export function createNightWatch({
     ...(modifier || {})
   };
   const nightLevel = Math.max(1, Math.floor(level));
-  const deepDef = deepFogFor(nightLevel);
+  const deepDef = nightLevel >= 16 ? deepFog || deepFogFor(nightLevel) : null;
   const deep = {
     hp: 1,
     speed: 1,
@@ -556,10 +565,16 @@ export function createNightWatch({
     ...(deepDef || {})
   };
   const waveTotal = nightWaveCount(nightLevel);
+  const bonus = talentBonus(talents);
+  if (deepDef) {
+    deep.oil = 1 - (1 - deep.oil) * bonus.deepOil;
+    deep.cooldown = 1 + (deep.cooldown - 1) * bonus.deepOil;
+    deep.hp = 1 + (deep.hp - 1) * bonus.deepHp;
+    deep.speed = 1 + (deep.speed - 1) * bonus.deepHp;
+  }
   const hpMul = nightHpScale(nightLevel) * mod.hp * deep.hp;
   const speedMul =
     (1 + Math.min(0.35, 0.03 * (nightLevel - 1))) * mod.speed * deep.speed;
-  const bonus = talentBonus(talents);
   const baseMax = NW_BASE_HP + bonus.baseHp;
 
   let phase = "ready";

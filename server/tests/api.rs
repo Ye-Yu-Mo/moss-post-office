@@ -1138,6 +1138,20 @@ async fn nightwatch_medals_are_serialized_and_idempotent() {
         .oneshot(post_json(
             alice_token,
             "/v1/nightwatch/claim",
+            json!({ "level": 20 }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let deep = json_body(response).await;
+    assert_eq!(deep["collectible"]["template"], "deep_20");
+    assert_eq!(deep["collectible"]["edition"], 50);
+
+    let response = app
+        .clone()
+        .oneshot(post_json(
+            alice_token,
+            "/v1/nightwatch/claim",
             json!({ "level": 7 }),
         ))
         .await

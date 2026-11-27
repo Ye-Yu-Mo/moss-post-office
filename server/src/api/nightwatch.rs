@@ -16,6 +16,9 @@ const MILESTONES: &[(i64, &str, i64)] = &[
     (5, "night_5", 100),
     (10, "night_10", 50),
     (15, "night_15", 25),
+    (20, "deep_20", 50),
+    (25, "deep_25", 30),
+    (30, "deep_30", 15),
 ];
 
 #[derive(Deserialize)]

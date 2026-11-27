@@ -53,9 +53,18 @@
 
     <p class="nw-next">{{ snapshot.nextText }}</p>
 
-    <p v-if="snapshot.deepUnlocked" class="nw-next nw-deep-note">
-      深雾已开启：第 16 夜起每晚额外叠一条只加难度的雾层词条<template v-if="snapshot.deepNext">，下一夜是「{{ snapshot.deepNext.name }}」——{{ snapshot.deepNext.desc }}{{ snapshot.deepNext.rewardText }}</template>。
-    </p>
+    <div v-if="snapshot.deepUnlocked" class="nw-deep-note">
+      <p>
+        深雾已开启：第 16 夜起每晚额外叠一条只加难度的雾层词条<template v-if="snapshot.deepNext">，下一夜是「{{ snapshot.deepNext.name }}」——{{ snapshot.deepNext.desc }}{{ snapshot.deepNext.rewardText }}</template>。
+      </p>
+      <button
+        v-if="snapshot.deepNext"
+        class="link-btn"
+        type="button"
+        :disabled="!snapshot.deepNext.canReroll"
+        @click="handlers.onRerollDeep"
+      >换一层 · 1 点</button>
+    </div>
 
     <div class="nw-section">
       <div class="tree-head"><span>守夜天赋</span><span>{{ snapshot.points }} 点可用</span></div>
