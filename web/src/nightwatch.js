@@ -414,7 +414,15 @@ export const NW_MODIFIERS = [
   { id: "rush", name: "急脚", tone: "hard", desc: "影子移动速度 +20%。", speed: 1.2, reward: 1.25 },
   { id: "swarm", name: "潮涌", tone: "hard", desc: "每一波多来一个影子。", extra: 1, reward: 1.25 },
   { id: "brittle", name: "脆纸", tone: "hard", desc: "植物生命 -20%。", towerHp: 0.8, reward: 1.25 },
-  { id: "thick", name: "厚影", tone: "hard", desc: "影子生命 +15%。", hp: 1.15, reward: 1.3 }
+  { id: "thick", name: "厚影", tone: "hard", desc: "影子生命 +15%。", hp: 1.15, reward: 1.3 },
+  { id: "lantern", name: "灯会", tone: "easy", desc: "灯塔花的光环效果翻倍。", aura: 2, reward: 0.9 },
+  { id: "toxic", name: "毒雾", tone: "easy", desc: "中毒伤害 +50%。", poison: 1.5, reward: 0.9 },
+  { id: "gale", name: "顺风", tone: "easy", desc: "击退距离翻倍。", knockback: 2, reward: 0.9 },
+  { id: "echo", name: "回响", tone: "easy", desc: "震波与爆裂伤害 +40%。", burst: 1.4, reward: 0.9 },
+  { id: "fusion", name: "融合夜", tone: "easy", desc: "融合花费 -30%。", fusionCost: 0.7, reward: 0.9 },
+  { id: "fogbank", name: "雾堤", tone: "hard", desc: "植物的射程只剩 2 格。", range: 2, reward: 1.4 },
+  { id: "greedy", name: "贪夜", tone: "hard", desc: "每波清完不再补灯油。", waveOil: 0, reward: 1.2 },
+  { id: "heavy", name: "重影", tone: "hard", desc: "影子生命 +25%。", hp: 1.25, reward: 1.35 }
 ];
 
 // 每天（本地时间）一条，按日序号散列；同一天刷新页面不会变。
@@ -512,6 +520,12 @@ export function createNightWatch({
     hp: 1,
     cooldown: 1,
     reward: 1,
+    aura: 1,
+    poison: 1,
+    knockback: 1,
+    burst: 1,
+    fusionCost: 1,
+    waveOil: 15,
     ...(modifier || {})
   };
   const nightLevel = Math.max(1, Math.floor(level));
@@ -642,7 +656,7 @@ export function createNightWatch({
       enemy.slowFactor = 1 - def.slow;
     }
     if (def && def.poison) {
-      enemy.poisonDps = Math.max(enemy.poisonDps || 0, def.poison);
+      enemy.poisonDps = Math.max(enemy.poisonDps || 0, def.poison * mod.poison);
       enemy.poisonUntil = simTime + (def.poisonFor || 4);
     }
   }
@@ -654,7 +668,7 @@ export function createNightWatch({
       const otherDef = UNITS[other.type];
       if (!otherDef.aura) continue;
       if (Math.abs(other.row - tower.row) <= 1 && Math.abs(other.col - tower.col) <= 1) {
-        bonus += otherDef.aura;
+        bonus += otherDef.aura * mod.aura;
       }
     }
     return 1 + bonus;
@@ -683,7 +697,7 @@ export function createNightWatch({
       }
       hurt(target, power, def);
       if (def.knockback && !ENEMIES[target.type].boss) {
-        target.x = Math.min(NW_COLS - 0.5, target.x + def.knockback);
+        target.x = Math.min(NW_COLS - 0.5, target.x + def.knockback * mod.knockback);
       }
       effects.push({
         row: tower.row,
@@ -700,14 +714,14 @@ export function createNightWatch({
     const rows = new Set();
     for (const enemy of enemies) {
       if (def.global) {
-        hurt(enemy, def.burst, def);
+        hurt(enemy, def.burst * mod.burst, def);
         hit += 1;
         rows.add(enemy.row);
         continue;
       }
       if (enemy.row !== tower.row) continue;
       if (Math.abs(enemy.x - tower.col) <= def.radius) {
-        hurt(enemy, def.burst, def);
+        hurt(enemy, def.burst * mod.burst, def);
         hit += 1;
         rows.add(enemy.row);
       }
@@ -903,7 +917,7 @@ export function createNightWatch({
       } else {
         phase = "break";
         breakClock = 3.2;
-        oil = Math.min(999, oil + 15);
+        oil = Math.min(999, oil + mod.waveOil);
       }
     }
   }
@@ -943,8 +957,9 @@ export function createNightWatch({
       if (!recipe || recipe.unlockNight > nightLevel) {
         return { ok: false, code: "occupied" };
       }
-      if (oil < def.cost) return { ok: false, code: "poor" };
-      oil -= def.cost;
+      const fusionCost = Math.max(1, Math.round(def.cost * mod.fusionCost));
+      if (oil < fusionCost) return { ok: false, code: "poor" };
+      oil -= fusionCost;
       existing.type = recipe.id;
       existing.fusion = true;
       existing.tier = recipe.tier || 1;

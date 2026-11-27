@@ -4692,6 +4692,14 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
         ...nightModifierSnapshot(currentNightModifier()),
         canReroll: progress.points >= 1
       },
+      modifierList: NW_MODIFIERS.map((modifier) => ({
+        id: modifier.id,
+        name: modifier.name,
+        desc: modifier.desc,
+        tone: modifier.tone,
+        today: modifier.id === currentNightModifier().id,
+        rewardText: nightModifierSnapshot(modifier).rewardText
+      })),
       medals: NIGHT_MEDALS.map((medal) => {
         const owned = collectibleFor("nightwatch", medal.template);
         return {

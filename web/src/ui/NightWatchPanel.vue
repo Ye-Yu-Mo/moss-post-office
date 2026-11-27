@@ -170,6 +170,26 @@
         </div>
 
         <div class="nw-section">
+          <div class="tree-head"><span>词条图鉴</span><span>{{ snapshot.modifierList.length }} 条</span></div>
+          <div class="nw-modifier-codex">
+            <article
+              v-for="modifier in snapshot.modifierList"
+              :key="modifier.id"
+              class="nw-modifier-row"
+              :class="['tone-' + modifier.tone, { 'is-today': modifier.today }]"
+            >
+              <div class="nw-modifier-row-head">
+                <b>{{ modifier.name }}</b>
+                <span v-if="modifier.today" class="nw-today-tag">今日</span>
+                <small v-if="modifier.rewardText">{{ modifier.rewardText }}</small>
+              </div>
+              <p>{{ modifier.desc }}</p>
+            </article>
+          </div>
+          <p class="nw-rules">每天从这 16 条里抽一条；花 1 点天赋可以重摇，同一天重摇会替换掉当前词条。</p>
+        </div>
+
+        <div class="nw-section">
           <div class="tree-head"><span>最近的夜</span><span>{{ snapshot.history.length }} 场</span></div>
           <p v-if="!snapshot.history.length" class="nw-empty">还没有守夜记录，先去开第一夜吧。</p>
           <div v-else class="nw-history">
