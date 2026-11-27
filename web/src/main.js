@@ -41,6 +41,7 @@ import {
   NW_ENEMY_LIST,
   dailyModifier,
   deepFogFor,
+  blockedCellsFor,
   NW_DEEP_FOG,
   talentCost,
   talentBonus,
@@ -4855,6 +4856,7 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
       towerCount: towers.filter((tower) => tower.unlocked).length,
       recipeCount: recipes.filter((recipe) => recipe.unlocked).length,
       points: progress.points,
+      blockedCount: blockedCellsFor(Math.max(1, progress.night || 1)).length,
       deepUnlocked: (progress.best || 0) >= 15 || (progress.night || 1) >= 16,
       deepNext: (() => {
         const deep = effectiveDeepFog(Math.max(1, progress.night || 1));

@@ -52,6 +52,9 @@
     </div>
 
     <p class="nw-next">{{ snapshot.nextText }}</p>
+    <p v-if="snapshot.blockedCount" class="nw-next nw-fog-note">
+      本夜有 {{ snapshot.blockedCount }} 格雾障，开局前就能在棋盘上看见；铲子可以半价收回植物。
+    </p>
 
     <div v-if="snapshot.deepUnlocked" class="nw-deep-note">
       <p>

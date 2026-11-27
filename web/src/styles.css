@@ -7120,3 +7120,8 @@ h3 {
   opacity: 0.55;
   filter: grayscale(0.35) brightness(0.85);
 }
+
+.nw-fog-note {
+  background: rgba(159, 150, 199, 0.14);
+  color: #5b5285;
+}
