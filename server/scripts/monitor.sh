@@ -9,6 +9,8 @@ STATIC_URL="${MOSS_STATIC_URL:-http://127.0.0.1:17321/}"
 HEALTH_URL="${MOSS_HEALTH_URL:-http://127.0.0.1:17321/api/healthz}"
 DISK_WARN="${MOSS_DISK_WARN:-90}"
 DISK_FAIL="${MOSS_DISK_FAIL:-95}"
+BACKUP_DIR="${MOSS_BACKUP_DIR:-/home/jas/games/moss-backups}"
+BACKUP_MAX_AGE="${MOSS_BACKUP_MAX_AGE:-93600}"
 
 mkdir -p "$STATUS_DIR"
 LOG="$STATUS_DIR/monitor.log"
@@ -45,11 +47,32 @@ for unit in moss-sync moss-post-office; do
   fi
 done
 
-home_code="$(curl -s -o /dev/null -m 5 -w '%{http_code}' "$STATIC_URL" 2>/dev/null || echo 000)"
+home_code="$(curl -s -o /dev/null -m 5 -w '%{http_code}' "$STATIC_URL" 2>/dev/null || true)"
+[ -z "$home_code" ] && home_code=000
 record "static_home" "$([ "$home_code" = "200" ] && echo 1 || echo 0)" "$home_code"
 
-health_code="$(curl -s -o /dev/null -m 5 -w '%{http_code}' "$HEALTH_URL" 2>/dev/null || echo 000)"
+health_code="$(curl -s -o /dev/null -m 5 -w '%{http_code}' "$HEALTH_URL" 2>/dev/null || true)"
+[ -z "$health_code" ] && health_code=000
 record "api_health" "$([ "$health_code" = "200" ] && echo 1 || echo 0)" "$health_code"
+
+latest_backup="$(ls -1t "$BACKUP_DIR"/moss-*.dump 2>/dev/null | head -1 || true)"
+if [ -n "$latest_backup" ]; then
+  age=$(( $(date +%s) - $(stat -c %Y "$latest_backup") ))
+  size=$(stat -c %s "$latest_backup")
+  if [ "$age" -le "$BACKUP_MAX_AGE" ] && [ "$size" -ge 1024 ]; then
+    record "backup_fresh" 1 "$(basename "$latest_backup") age=${age}s size=${size}B"
+  else
+    record "backup_fresh" 0 "$(basename "$latest_backup") age=${age}s size=${size}B"
+  fi
+else
+  record "backup_fresh" 0 "no dump in $BACKUP_DIR"
+fi
+
+if systemctl --user is-active moss-backup.timer >/dev/null 2>&1; then
+  record "backup_timer" 1 "active"
+else
+  record "backup_timer" 0 "inactive"
+fi
 
 disk="$(df -P / | awk 'NR==2 {gsub("%","",$5); print $5}')"
 if [ "$disk" -ge "$DISK_FAIL" ]; then

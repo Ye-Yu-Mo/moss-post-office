@@ -209,7 +209,22 @@ curl -sS -X POST http://127.0.0.1:17322/v1/events \
 - `verifier` 是 256 位派生值；它等价于本站的登录密钥，数据库泄露仍会导致账号被冒用，请限制 DB 访问并备份加密。
 - 备份：`scripts/backup_postgres.sh` 每天 03:30（`moss-backup.timer`）用 `pg_dump -Fc` 备份到 `/home/jas/games/moss-backups`，保留最近 14 份；写入前用 `pg_restore --list` 校验，文件 600。
 - 监控：`scripts/monitor.sh` 每 5 分钟（`moss-monitor.timer`）检查 Postgres 容器/查询、moss-sync、静态服务、首页与 `/api/healthz`、磁盘；结果写 `/home/jas/games/moss-status/status.json` 和 `monitor.log`，失败时 unit 置为 failed。
+- 监控也检查最新 dump 的新鲜度（默认 26 小时内）与 `moss-backup.timer` 是否 active；备份静默失败会让 unit 置为 failed。
 - 目前没有外部告警通道：可以把 `status.json` 接到 Beszel/健康检查服务，或在反代层加告警。
+
+### 恢复备份
+
+```bash
+# 恢复到临时库做演练（不碰生产）
+docker exec moss-postgres createdb -U moss moss_restore
+docker exec -i moss-postgres pg_restore -U moss --no-owner --no-privileges \
+  -d moss_restore < /home/jas/games/moss-backups/<dump>
+docker exec moss-postgres psql -U moss -d moss_restore -Atc \
+  "select count(*) from users; select count(*) from saves;"
+docker exec moss-postgres dropdb -U moss moss_restore
+```
+
+生产恢复是破坏性操作：先 `systemctl --user stop moss-sync`，确认没有连接后重建 `moss` 库再 restore，最后启动服务并跑一次 `monitor.sh`。
 - 事件表会持续增长；上线后按周归档或保留 90 天。
 
 ## 当前线上部署（HTTP）
@@ -237,13 +252,14 @@ python3 scripts/reset_password.py --docker-container moss-postgres \
 ```bash
 systemctl --user stop moss-sync
 rm -f ~/.config/systemd/user/moss-sync.service.d/postgres.conf
+cp moss-sync moss-sync.pg-backup-$(date +%Y%m%d-%H%M%S)
 cp moss-sync.sqlite-backup-<stamp> moss-sync
 cp data/moss.db.sqlite-backup-<stamp> data/moss.db
 systemctl --user daemon-reload
 systemctl --user start moss-sync
 ```
 
-回滚后 PostgreSQL 里的新数据不会自动回写 SQLite，只用于紧急恢复。
+回滚后 PostgreSQL 里的新数据不会自动回写 SQLite，只用于紧急恢复。要回到 PG：恢复 `moss-sync.pg-backup-*` 与 `postgres.conf` drop-in，daemon-reload 后启动；PG 数据仍在容器 volume 里。
 </br>
 
 ## 部署建议
