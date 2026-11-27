@@ -40,6 +40,7 @@ import {
   NW_MODIFIERS,
   NW_ENEMY_LIST,
   dailyModifier,
+  deepFogFor,
   talentCost,
   talentBonus,
   NW_LANES,
@@ -1447,6 +1448,7 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
             wave: Math.max(0, Math.floor(numberOr(run.wave))),
             waves: Math.max(1, Math.floor(numberOr(run.waves, 1))),
             kills: Math.max(0, Math.floor(numberOr(run.kills))),
+            deep: Boolean(run.deep),
             at: numberOr(run.at)
           }))
           .slice(0, 20);
@@ -4725,6 +4727,13 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
       towerCount: towers.filter((tower) => tower.unlocked).length,
       recipeCount: recipes.filter((recipe) => recipe.unlocked).length,
       points: progress.points,
+      deepUnlocked: (progress.best || 0) >= 15 || (progress.night || 1) >= 16,
+      deepNext: (() => {
+        const deep = deepFogFor(Math.max(1, progress.night || 1));
+        return deep
+          ? { name: `深雾·${deep.name}`, desc: deep.desc, rewardText: `奖励 ×${deep.reward}` }
+          : null;
+      })(),
       modifier: {
         ...nightModifierSnapshot(currentNightModifier()),
         canReroll: progress.points >= 1
@@ -4879,6 +4888,7 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
         wave: result.wave,
         waves: result.waves,
         kills: result.kills,
+        deep: Boolean(result.deepFog),
         at: Date.now()
       },
       ...(progress.history || [])

@@ -13,6 +13,11 @@
         :class="'tone-' + snapshot.modifier.tone"
         :title="snapshot.modifier.desc"
       ><small>今日</small><b>{{ snapshot.modifier.name }}</b></span>
+      <span
+        v-if="snapshot.deepFog.active"
+        class="nw-chip nw-deep-chip"
+        :title="snapshot.deepFog.desc"
+      ><small>深雾</small><b>{{ snapshot.deepFog.shortName }} · {{ snapshot.deepFog.layer }} 层</b></span>
       <div class="nw-controls">
         <button class="link-btn" type="button" @click="handlers.onPause">
           {{ snapshot.paused ? "继续" : "暂停" }}
@@ -21,7 +26,10 @@
       </div>
     </div>
 
-    <div class="nw-board" :class="{ 'is-break': snapshot.phase === 'break', 'is-over': isOver }">
+    <div
+      class="nw-board"
+      :class="{ 'is-break': snapshot.phase === 'break', 'is-over': isOver, 'is-deep': snapshot.deepFog.active }"
+    >
       <div class="nw-lanes" aria-hidden="true">
         <span v-for="row in laneList" :key="row" class="nw-lane"></span>
       </div>
@@ -72,12 +80,15 @@
       </div>
 
       <div v-if="snapshot.phase === 'ready'" class="nw-overlay">
-        <p class="nw-overlay-kicker">苔藓邮局 · 守夜</p>
-        <h4>第 {{ snapshot.level }} 夜</h4>
+        <p class="nw-overlay-kicker">{{ snapshot.deepFog.active ? "苔藓邮局 · 深雾" : "苔藓邮局 · 守夜" }}</p>
+        <h4>第 {{ snapshot.level }} 夜<template v-if="snapshot.deepFog.active"> · 深雾 {{ snapshot.deepFog.layer }} 层</template></h4>
         <p>雾从邮路尽头漫上来。把信封草、邮票花和彩纸藤种在格子里，别让影子摸到门板。</p>
         <p class="nw-overlay-note">相同的两株、或者有配方的两株，种在同一格就能融合。</p>
         <p class="nw-overlay-note">夜蛾飞过墙，夜鼠偷灯油，鼓手会给同伴加速。</p>
         <p v-if="snapshot.level >= 9" class="nw-overlay-note">第 9 夜起，融合体还能再和基础植物融合一次。</p>
+        <p v-if="snapshot.deepFog.active" class="nw-overlay-note">
+          深雾第 {{ snapshot.deepFog.layer }} 层「{{ snapshot.deepFog.name }}」：{{ snapshot.deepFog.desc }} · {{ snapshot.deepFog.rewardText }}
+        </p>
         <p v-if="snapshot.modifier.name" class="nw-overlay-note">
           今日词条「{{ snapshot.modifier.name }}」：{{ snapshot.modifier.desc }}{{ snapshot.modifier.rewardText ? ` · ${snapshot.modifier.rewardText}` : "" }}
         </p>

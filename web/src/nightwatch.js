@@ -425,6 +425,21 @@ export const NW_MODIFIERS = [
   { id: "heavy", name: "重影", tone: "hard", desc: "影子生命 +25%。", hp: 1.25, reward: 1.35 }
 ];
 
+// 第 16 夜起进入深雾：按夜数轮流叠一条只加难度的雾层词条。
+export const NW_DEEP_FOG = [
+  { id: "thick", name: "厚", desc: "影子生命 +20%。", hp: 1.2, reward: 1.5 },
+  { id: "swift", name: "疾", desc: "影子移动速度 +15%。", speed: 1.15, reward: 1.45 },
+  { id: "dry", name: "旱", desc: "灯油收入 -20%。", oil: 0.8, reward: 1.45 },
+  { id: "rot", name: "蚀", desc: "植物生命 -15%。", towerHp: 0.85, reward: 1.45 },
+  { id: "tide", name: "潮", desc: "每一波多来一个影子。", extra: 1, reward: 1.5 },
+  { id: "dull", name: "钝", desc: "植物冷却 +15%。", cooldown: 1.15, reward: 1.45 }
+];
+
+export function deepFogFor(level) {
+  if (level < 16) return null;
+  return NW_DEEP_FOG[(level - 16) % NW_DEEP_FOG.length];
+}
+
 // 每天（本地时间）一条，按日序号散列；同一天刷新页面不会变。
 export function dailyModifier(date = new Date()) {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
@@ -529,9 +544,21 @@ export function createNightWatch({
     ...(modifier || {})
   };
   const nightLevel = Math.max(1, Math.floor(level));
+  const deepDef = deepFogFor(nightLevel);
+  const deep = {
+    hp: 1,
+    speed: 1,
+    oil: 1,
+    towerHp: 1,
+    extra: 0,
+    cooldown: 1,
+    reward: 1,
+    ...(deepDef || {})
+  };
   const waveTotal = nightWaveCount(nightLevel);
-  const hpMul = nightHpScale(nightLevel) * mod.hp;
-  const speedMul = (1 + Math.min(0.35, 0.03 * (nightLevel - 1))) * mod.speed;
+  const hpMul = nightHpScale(nightLevel) * mod.hp * deep.hp;
+  const speedMul =
+    (1 + Math.min(0.35, 0.03 * (nightLevel - 1))) * mod.speed * deep.speed;
   const bonus = talentBonus(talents);
   const baseMax = NW_BASE_HP + bonus.baseHp;
 
@@ -560,7 +587,8 @@ export function createNightWatch({
   }
 
   function buildWave(index) {
-    const count = 3 + index + Math.floor((nightLevel - 1) / 3) + mod.extra;
+    const count =
+      3 + index + Math.floor((nightLevel - 1) / 3) + mod.extra + deep.extra;
     const list = [];
     for (let i = 0; i < count; i += 1) {
       const roll = rng();
@@ -639,8 +667,8 @@ export function createNightWatch({
       type,
       col,
       row,
-      hp: Math.round(def.hp * bonus.hp * mod.towerHp),
-      maxHp: Math.round(def.hp * bonus.hp * mod.towerHp),
+      hp: Math.round(def.hp * bonus.hp * mod.towerHp * deep.towerHp),
+      maxHp: Math.round(def.hp * bonus.hp * mod.towerHp * deep.towerHp),
       cool: 0.2,
       oilTimer: def.interval || 0,
       burstTimer: def.interval || 0,
@@ -706,7 +734,7 @@ export function createNightWatch({
         kind: "bolt"
       });
     }
-    tower.cool = def.cooldown * bonus.cooldown * mod.cooldown;
+    tower.cool = def.cooldown * bonus.cooldown * mod.cooldown * deep.cooldown;
   }
 
   function burst(tower, def) {
@@ -775,7 +803,7 @@ export function createNightWatch({
       if (def.oil) {
         tower.oilTimer -= dt;
         if (tower.oilTimer <= 0) {
-          oil = Math.min(999, oil + def.oil * mod.oil);
+          oil = Math.min(999, oil + def.oil * mod.oil * deep.oil);
           tower.oilTimer = def.interval;
         }
       }
@@ -795,10 +823,10 @@ export function createNightWatch({
 
   function scaledRewards(base) {
     return {
-      stamps: Math.round(base.stamps * mod.reward),
-      ink: Math.max(1, Math.round(base.ink * mod.reward)),
-      paper: Math.round(base.paper * mod.reward),
-      wax: base.wax ? Math.max(1, Math.round(base.wax * mod.reward)) : 0
+      stamps: Math.round(base.stamps * mod.reward * deep.reward),
+      ink: Math.max(1, Math.round(base.ink * mod.reward * deep.reward)),
+      paper: Math.round(base.paper * mod.reward * deep.reward),
+      wax: base.wax ? Math.max(1, Math.round(base.wax * mod.reward * deep.reward)) : 0
     };
   }
 
@@ -812,6 +840,7 @@ export function createNightWatch({
       waves: waveTotal,
       kills,
       baseHp,
+      deepFog: Boolean(deepDef),
       rewards: won ? scaledRewards(nightRewards(nightLevel)) : null
     };
     onFinish(result);
@@ -824,7 +853,7 @@ export function createNightWatch({
     if (!dt) return;
     simTime += dt;
     effects = [];
-    oil = Math.min(999, oil + (1.4 + bonus.drip) * mod.oil * dt);
+    oil = Math.min(999, oil + (1.4 + bonus.drip) * mod.oil * deep.oil * dt);
 
     if (phase === "break") {
       updateTowers(dt);
@@ -963,8 +992,8 @@ export function createNightWatch({
       existing.type = recipe.id;
       existing.fusion = true;
       existing.tier = recipe.tier || 1;
-      existing.maxHp = Math.round(recipe.hp * bonus.hp * mod.towerHp);
-      existing.hp = Math.round(recipe.hp * bonus.hp * mod.towerHp);
+      existing.maxHp = Math.round(recipe.hp * bonus.hp * mod.towerHp * deep.towerHp);
+      existing.hp = Math.round(recipe.hp * bonus.hp * mod.towerHp * deep.towerHp);
       existing.cool = 0.3;
       existing.oilTimer = recipe.interval || 0;
       existing.burstTimer = recipe.interval || 0;
@@ -1069,6 +1098,17 @@ export function createNightWatch({
         to: effect.to,
         kind: effect.kind
       })),
+      deepFog: deepDef
+        ? {
+            active: true,
+            layer: nightLevel - 15,
+            id: deepDef.id,
+            name: `深雾·${deepDef.name}`,
+            shortName: deepDef.name,
+            desc: deepDef.desc,
+            rewardText: `奖励 ×${deep.reward}`
+          }
+        : { active: false, layer: 0, id: "", name: "", desc: "", rewardText: "" },
       modifier: {
         id: mod.id,
         name: mod.name,

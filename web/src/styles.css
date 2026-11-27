@@ -6745,3 +6745,24 @@ h3 {
   background: rgba(98, 141, 101, 0.16);
   color: var(--moss-deep);
 }
+
+/* deep fog */
+.nw-board.is-deep {
+  background:
+    linear-gradient(180deg, rgba(38, 52, 46, 0.96), rgba(14, 22, 18, 0.99)),
+    radial-gradient(circle at 30% 10%, rgba(159, 150, 199, 0.12), transparent 60%);
+}
+
+.nw-deep-chip {
+  border-color: rgba(159, 150, 199, 0.55);
+  background: rgba(159, 150, 199, 0.16);
+}
+
+.nw-deep-chip b {
+  color: #5b5285;
+}
+
+.nw-deep-note {
+  background: rgba(159, 150, 199, 0.14);
+  color: #5b5285;
+}

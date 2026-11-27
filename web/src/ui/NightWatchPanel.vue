@@ -53,6 +53,10 @@
 
     <p class="nw-next">{{ snapshot.nextText }}</p>
 
+    <p v-if="snapshot.deepUnlocked" class="nw-next nw-deep-note">
+      深雾已开启：第 16 夜起每晚额外叠一条只加难度的雾层词条<template v-if="snapshot.deepNext">，下一夜是「{{ snapshot.deepNext.name }}」——{{ snapshot.deepNext.desc }}{{ snapshot.deepNext.rewardText }}</template>。
+    </p>
+
     <div class="nw-section">
       <div class="tree-head"><span>守夜天赋</span><span>{{ snapshot.points }} 点可用</span></div>
       <div class="nw-talent-grid">
@@ -200,7 +204,7 @@
               :class="{ 'is-won': run.won }"
             >
               <b>第 {{ run.level }} 夜</b>
-              <span>{{ run.won ? "守住" : "失守" }} · 第 {{ run.wave }}/{{ run.waves }} 波 · 打散 {{ run.kills }}</span>
+              <span>{{ run.won ? "守住" : "失守" }} · 第 {{ run.wave }}/{{ run.waves }} 波 · 打散 {{ run.kills }}<template v-if="run.deep"> · 深雾</template></span>
               <small>{{ run.timeText }}</small>
             </div>
           </div>
