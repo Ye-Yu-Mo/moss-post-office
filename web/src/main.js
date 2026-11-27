@@ -5169,15 +5169,16 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
       if (!progress.pendingMedals.includes(result.level)) {
         progress.pendingMedals.push(result.level);
       }
-      if (account && account.token) {
-        flushNightMedals();
-      } else {
+      if (!account || !account.token) {
         showToast(`第 ${result.level} 夜的纪念戳会等你登录后寄进邮册。`, 4600);
       }
     }
     saveGame();
     refreshLive();
     updateTabBadges();
+    if (account && account.token && progress.pendingMedals.length) {
+      flushNightMedals();
+    }
     showToast(
       `第 ${result.level} 夜守住了，带回 ${formatNumber(rewards.stamps)} 张邮票和 ${talentPoints} 点守夜天赋。`,
       4600
@@ -7064,7 +7065,7 @@ import { setRoomNavSnapshot } from "./ui/roomNavStore.js";
     for (let attempt = 0; attempt < 12 && cloudPushing; attempt += 1) {
       await new Promise((resolve) => window.setTimeout(resolve, 120));
     }
-    if (account.dirty && !cloudPushing && !account.conflict) {
+    if (!cloudPushing && !account.conflict) {
       try {
         await cloudPushNow();
       } catch (error) {
