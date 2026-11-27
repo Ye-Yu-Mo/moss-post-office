@@ -6,6 +6,8 @@ import { mountOrders, unmountOrders } from "./ui/mountOrders.js";
 import { setOrdersSnapshot } from "./ui/ordersStore.js";
 import { mountAlbum, unmountAlbum } from "./ui/mountAlbum.js";
 import { setAlbumSnapshot } from "./ui/albumStore.js";
+import { mountMoon, unmountMoon } from "./ui/mountMoon.js";
+import { setMoonSnapshot } from "./ui/moonStore.js";
 
 (() => {
   "use strict";
@@ -1193,6 +1195,7 @@ import { setAlbumSnapshot } from "./ui/albumStore.js";
   let dispatchUi = null;
   let lastOrdersSignature = "";
   let lastAlbumSignature = "";
+  let lastMoonSignature = "";
 
   const shopUi = new Map();
   const upgradeUi = new Map();
@@ -4451,131 +4454,76 @@ import { setAlbumSnapshot } from "./ui/albumStore.js";
     showToast("你把邮袋留在了路边，空手回到了邮局。", 3600);
   }
 
-  function buildMoonPanel() {
-    const branches = Object.entries(MOON_BRANCHES);
-    els.panelBody.innerHTML = `
-      <div class="moon-card" aria-hidden="true">
-        <img src="/assets/moon-banner.webp" alt="" width="1200" height="480" loading="lazy" decoding="async">
-        <p class="moon-caption">23:00 · 夜班邮车</p>
-      </div>
-      <p class="prestige-copy">攒够 30,000 张邮票，夜班邮车就会来接走这一程的信。月光邮戳可以点亮月光树：每用掉 1 枚，全局产出 +10%，节点永久保留。柜台来信每完成 4 封，也会留下 1 枚。</p>
-      <div class="prestige-stats">
-        <div class="prestige-stat">
-          <span>已得到的月光邮戳</span>
-          <strong id="moonOwned">0 枚</strong>
-        </div>
-        <div class="prestige-stat">
-          <span>全局产出加成</span>
-          <strong id="moonBonus">+0%</strong>
-        </div>
-      </div>
-      <section class="moon-tree">
-        <div class="tree-head">
-          <span>月光树</span>
-          <span><b id="moonPoints">0</b> 枚可用</span>
-        </div>
-        <div class="tree-grid">
-          ${branches.map(([branchId, branchName]) => `
-            <div class="tree-branch">
-              <div class="tree-branch-head">${branchName}</div>
-              ${MOON_NODES.filter((node) => node.branch === branchId).map((node) => {
-                const owned = nodeOwned(node);
-                const fillable = !owned && nodeUnlocked(node) && moonPoints() >= node.cost;
-                return `
-                  <button class="tree-node${owned ? " is-owned" : ""}${fillable ? " is-fillable" : ""}" type="button" data-moon-node="${node.id}" ${owned || !fillable ? "disabled" : ""} aria-label="${node.name}，${node.desc}，${nodeReason(node)}">
-                    <span class="node-dot" aria-hidden="true"></span>
-                    <span class="node-copy"><b>${node.name}</b><small>${node.desc}</small></span>
-                    <span class="node-cost">${nodeReason(node)}</span>
-                  </button>`;
-              }).join("")}
-            </div>`).join("")}
-        </div>
-        <p class="tree-note">点亮顺序：每条分支从上往下。节点效果会立刻生效。</p>
-      </section>
-      <section class="contract-box">
-        <div class="tree-head">
-          <span>夜班契约</span>
-          <span id="contractStatus">本局未选择</span>
-        </div>
-        <div class="contract-grid">
-          ${CONTRACTS.map((contract) => {
-            const active = state.contract === contract.id;
-            const locked = Boolean(state.contract) && !active;
-            return `
-              <button class="contract-card${active ? " is-active" : ""}" type="button" data-contract="${contract.id}" ${locked ? "disabled" : ""}>
-                <b>${contract.name}</b>
-                <small>${contract.desc}</small>
-                <span>${active ? "本局生效中" : locked ? "本局已定" : "选它"}</span>
-              </button>`;
-          }).join("")}
-        </div>
-        <p class="tree-note">发车后会清空契约，下一程重新选。</p>
-      </section>
-      <div class="prestige-progress">
-        <div class="prestige-progress-top">
-          <span id="moonNextLabel">下一枚月光邮戳</span>
-          <b id="moonProgressText">0 / 30,000</b>
-        </div>
-        <div class="prestige-bar"><span class="prestige-fill" id="moonFill"></span></div>
-      </div>
-      <button class="primary-btn" id="prestigeBtn" type="button" disabled>还差 30,000 张邮票</button>
-      <p class="prestige-note">本程邮票、小邮差、风铃、工坊邮戳和手上的来信会重新开始；月光邮戳、月光树、邮路熟练度、远行、墨点与集邮册会留下。</p>
-    `;
-
-    moonUi = {
-      owned: document.getElementById("moonOwned"),
-      points: document.getElementById("moonPoints"),
-      bonus: document.getElementById("moonBonus"),
-      progress: document.getElementById("moonProgressText"),
-      nextLabel: document.getElementById("moonNextLabel"),
-      fill: document.getElementById("moonFill"),
-      button: document.getElementById("prestigeBtn"),
-      contractStatus: document.getElementById("contractStatus")
+  function moonSnapshot() {
+    const gain = currentMoonGain();
+    const nextThreshold = PRESTIGE_BASE * Math.pow(gain + 1, 2);
+    const contract = currentContract();
+    return {
+      moonStamps: formatNumber(state.moonStamps),
+      points: formatNumber(moonPoints()),
+      bonusPercent: moonBonusPercent(),
+      branches: Object.entries(MOON_BRANCHES).map(([branchId, branchName]) => ({
+        id: branchId,
+        name: branchName,
+        nodes: MOON_NODES.filter((node) => node.branch === branchId).map((node) => {
+          const owned = nodeOwned(node);
+          const fillable = !owned && nodeUnlocked(node) && moonPoints() >= node.cost;
+          return {
+            id: node.id,
+            name: node.name,
+            desc: node.desc,
+            owned,
+            fillable,
+            reason: nodeReason(node)
+          };
+        })
+      })),
+      contracts: CONTRACTS.map((item) => {
+        const active = state.contract === item.id;
+        return {
+          id: item.id,
+          name: item.name,
+          desc: item.desc,
+          active,
+          locked: Boolean(state.contract) && !active
+        };
+      }),
+      contractStatus: contract ? contract.name : "本局未选择",
+      progressText: `${formatNumber(state.runEarned)} / ${formatNumber(nextThreshold)}`,
+      fillPercent: Math.round(completionPercent(state.runEarned, nextThreshold) * 10) / 10,
+      prestigeReady: gain >= 1,
+      prestigeLabel:
+        gain >= 1
+          ? `让夜班邮车发车 · +${gain} 枚`
+          : `还差 ${formatNumber(Math.max(0, PRESTIGE_BASE - state.runEarned))}张邮票`,
+      prestigeAria:
+        gain >= 1
+          ? `让夜班邮车发车，获得 ${gain} 枚月光邮戳`
+          : "邮票还不够，夜班邮车尚未发车"
     };
-    refreshMoonUi();
+  }
+
+  function buildMoonPanel() {
+    moonBuilt = true;
+    unmountMoon();
+    els.panelBody.innerHTML = `<div data-moon-root></div>`;
+    mountMoon(els.panelBody.querySelector("[data-moon-root]"), {
+      onBuyNode: buyMoonNode,
+      onSelectContract: selectContract,
+      onPrestige: openPrestigeModal
+    });
+    const next = moonSnapshot();
+    lastMoonSignature = JSON.stringify(next);
+    setMoonSnapshot(next);
   }
 
   function refreshMoonUi() {
-    if (!moonUi) return;
-    const gain = currentMoonGain();
-    const nextThreshold = PRESTIGE_BASE * Math.pow(gain + 1, 2);
-    const progress = completionPercent(state.runEarned, nextThreshold);
-
-    setText(moonUi.owned, `${formatNumber(state.moonStamps)} 枚`);
-    if (moonUi.points) setText(moonUi.points, formatNumber(moonPoints()));
-    setText(moonUi.bonus, `+${moonBonusPercent()}%`);
-    setText(moonUi.progress, `${formatNumber(state.runEarned)} / ${formatNumber(nextThreshold)}`);
-    setText(moonUi.nextLabel, "下一枚月光邮戳");
-    moonUi.fill.style.width = `${Math.round(progress * 10) / 10}%`;
-    if (moonUi.contractStatus) {
-      const contract = currentContract();
-      setText(moonUi.contractStatus, contract ? contract.name : "本局未选择");
-    }
-
-    MOON_NODES.forEach((node) => {
-      const button = els.panelBody.querySelector(`[data-moon-node="${node.id}"]`);
-      if (!button) return;
-      const owned = nodeOwned(node);
-      const fillable = !owned && nodeUnlocked(node) && moonPoints() >= node.cost;
-      button.disabled = owned || !fillable;
-      button.classList.toggle("is-owned", owned);
-      button.classList.toggle("is-fillable", fillable);
-      const cost = button.querySelector(".node-cost");
-      if (cost) setText(cost, nodeReason(node));
-    });
-
-    if (gain >= 1) {
-      moonUi.button.disabled = false;
-      setText(moonUi.button, `让夜班邮车发车 · +${gain} 枚`);
-      moonUi.button.setAttribute("aria-label", `让夜班邮车发车，获得 ${gain} 枚月光邮戳`);
-    } else {
-      moonUi.button.disabled = true;
-      setText(
-        moonUi.button,
-        `还差 ${formatNumber(Math.max(0, PRESTIGE_BASE - state.runEarned))}张邮票`
-      );
-      moonUi.button.setAttribute("aria-label", "邮票还不够，夜班邮车尚未发车");
-    }
+    if (!state || activeTab !== "moon") return;
+    const next = moonSnapshot();
+    const signature = JSON.stringify(next);
+    if (signature === lastMoonSignature) return;
+    lastMoonSignature = signature;
+    setMoonSnapshot(next);
   }
 
   function currentMoonGain() {
@@ -4603,6 +4551,7 @@ import { setAlbumSnapshot } from "./ui/albumStore.js";
     els.buySwitch.hidden = name !== "posties";
     if (name !== "orders") unmountOrders();
     if (name !== "album") unmountAlbum();
+    if (name !== "moon") unmountMoon();
 
     if (name === "posties") {
       buildShopPanel();
