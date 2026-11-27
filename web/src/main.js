@@ -21,6 +21,17 @@ import {
   unmountExpeditionPrep
 } from "./ui/mountExpeditionPrep.js";
 import { setExpeditionPrepSnapshot } from "./ui/expeditionPrepStore.js";
+import { mountInfoModal, unmountInfoModal } from "./ui/mountInfoModal.js";
+import { setInfoSnapshot } from "./ui/infoStore.js";
+import { mountEventModal, unmountEventModal } from "./ui/mountEventModal.js";
+import { setEventSnapshot } from "./ui/eventStore.js";
+import { mountFriendProfile, unmountFriendProfile } from "./ui/mountFriendProfile.js";
+import { setFriendProfileSnapshot } from "./ui/friendProfileStore.js";
+import {
+  mountPostcardComposer,
+  unmountPostcardComposer
+} from "./ui/mountPostcardComposer.js";
+import { setPostcardComposerSnapshot } from "./ui/postcardComposerStore.js";
 
 (() => {
   "use strict";
@@ -3049,10 +3060,19 @@ import { setExpeditionPrepSnapshot } from "./ui/expeditionPrepStore.js";
     const order = state.accepted.find((candidate) => candidate.id === id);
     if (!order) return;
     const template = orderTpl(order.tpl);
-    openModal({
+    openInfoModal({
       title: "把这封信放回柜台？",
       confirmLabel: "放下",
-      body: `<p>${template.sender}的「${template.title}」还没送出去。放下后这封信会回到柜台外，不会扣邮票。</p>`,
+      blocks: [
+        {
+          type: "p",
+          runs: [
+            {
+              t: `${template.sender}的「${template.title}」还没送出去。放下后这封信会回到柜台外，不会扣邮票。`
+            }
+          ]
+        }
+      ],
       action: () => {
         state.accepted = state.accepted.filter((candidate) => candidate.id !== id);
         ensureOffers();
@@ -3140,21 +3160,31 @@ import { setExpeditionPrepSnapshot } from "./ui/expeditionPrepStore.js";
     openEvent(chosen);
   }
 
+  function eventSnapshot(event) {
+    return {
+      lines: event.body.slice(),
+      choices: event.choices.map((choice, index) => ({
+        index,
+        label: choice.label,
+        note: choice.note || "",
+        disabled: !canPayChoice(choice)
+      }))
+    };
+  }
+
   function openEvent(event) {
     eventOpen = true;
-    const choices = event.choices.map((choice, index) => {
-      const affordable = canPayChoice(choice);
-      return `
-        <button class="event-choice" type="button" data-event-choice="${index}" ${affordable ? "" : "disabled"}>
-          <b>${choice.label}</b>
-          <span>${choice.note || ""}</span>
-        </button>`;
-    }).join("");
     openModal({
       title: event.title,
-      body: `${event.body.map((line) => `<p>${line}</p>`).join("")}<div class="event-choices">${choices}</div>`,
+      body: `<div data-event-root></div>`,
       footer: false
     });
+    const root = els.modalBody.querySelector("[data-event-root]");
+    if (!root) return;
+    mountEventModal(root, {
+      onChoose: (index) => applyEventChoice(Number(index))
+    });
+    setEventSnapshot(eventSnapshot(event));
   }
 
   function applyEventChoice(index) {
@@ -3239,10 +3269,16 @@ import { setExpeditionPrepSnapshot } from "./ui/expeditionPrepStore.js";
       showToast("这一程的契约已经定下了，等夜班邮车发车后再选。", 3000);
       return;
     }
-    openModal({
+    openInfoModal({
       title: `这一程走「${contract.name}」？`,
       confirmLabel: "定下契约",
-      body: `<p>${contract.desc}</p><p>契约会一直生效到下一次夜班邮车发车。发车后可以重新选择。</p>`,
+      blocks: [
+        { type: "p", runs: [{ t: contract.desc }] },
+        {
+          type: "p",
+          runs: [{ t: "契约会一直生效到下一次夜班邮车发车。发车后可以重新选择。" }]
+        }
+      ],
       action: () => {
         state.contract = contract.id;
         saveGame();
@@ -5345,6 +5381,10 @@ import { setExpeditionPrepSnapshot } from "./ui/expeditionPrepStore.js";
     unmountSeedModal();
     unmountFriendGarden();
     unmountExpeditionPrep();
+    unmountInfoModal();
+    unmountEventModal();
+    unmountFriendProfile();
+    unmountPostcardComposer();
     modalAction = typeof options.action === "function" ? options.action : null;
     modalReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     els.modalTitle.textContent = options.title;
@@ -5379,6 +5419,10 @@ import { setExpeditionPrepSnapshot } from "./ui/expeditionPrepStore.js";
     unmountSeedModal();
     unmountFriendGarden();
     unmountExpeditionPrep();
+    unmountInfoModal();
+    unmountEventModal();
+    unmountFriendProfile();
+    unmountPostcardComposer();
     els.modal.hidden = true;
     document.body.style.overflow = "";
     modalAction = null;
@@ -5421,38 +5465,68 @@ import { setExpeditionPrepSnapshot } from "./ui/expeditionPrepStore.js";
     }
   }
 
-  function openHelpModal() {
+  function openInfoModal(options) {
     openModal({
+      title: options.title,
+      body: `<div data-info-root></div>`,
+      footer: options.footer,
+      showCancel: options.showCancel,
+      confirmLabel: options.confirmLabel,
+      tone: options.tone,
+      kicker: options.kicker,
+      action: options.action
+    });
+    const root = els.modalBody.querySelector("[data-info-root]");
+    if (!root) return;
+    mountInfoModal(root);
+    setInfoSnapshot({ blocks: options.blocks });
+  }
+
+  function openHelpModal() {
+    const tips = [
+      "盖戳时，等小圆点转进底部的金色弧线内再点：完美 ×3，并得到 1 枚墨点。连击越高，圆点转得越快。",
+      "同一线路的小邮差达到 10、25、50 位时，会触发线路里程碑，产出变为 ×1.5、×2、×2.5。",
+      "苔藓镇每两分半换一次天气，会给不同线路或蜡封盖戳带来额外倍率。",
+      "手边的风铃每 90 秒能摇一次，摇响后 20 秒内全邮局产出 ×3；有些来信要求整单不摇铃。",
+      "邮路柜台能同时派两位邮差出门，月光树还能再加一位。短程回信快，远程带回来的邮票更多；每完成 3 趟，熟练度升一级。",
+      "柜台来信有条件和时限，完成给邮票和墨点；每完成 4 封，夜班邮车会留下 1 枚月光邮戳。",
+      "墨点可以换一批来信，也能让在途的邮路立刻回来。它来自完美盖戳和柜台来信。",
+      "攒够 30,000 张邮票，夜班邮车会带来月光邮戳。用邮戳点亮月光树：每 1 点全局 +10%，节点永久保留；每程还能选一个夜班契约。",
+      "集邮册会记录特别的小事。每贴上一枚纪念邮票，所有产出永久再多一点。",
+      "偶尔会飘来闪光的信。离开时小邮差仍会送信，收益默认按一半计算，最多两小时；月光树能延长它。",
+      "邮册会自动合上并保存。手机端底部的快捷蜡封固定算“不错 ×1.5”，不参与完美判定。",
+      "邮路还能延伸到雾湖之外：随机地图、邮差牌、信件与干粮。失败只丢这一趟，奖励和月光邮戳会回流邮局。"
+    ];
+    openInfoModal({
       title: "怎么经营一间苔藓邮局",
       showCancel: false,
       confirmLabel: "知道啦",
-      body: `
-        <p>点击大蜡封寄出一封信，邮票就是这间邮局的心跳。</p>
-        <ol class="modal-list">
-          <li><b>1</b><span>盖戳时，等小圆点转进底部的金色弧线内再点：完美 ×3，并得到 1 枚墨点。连击越高，圆点转得越快。</span></li>
-          <li><b>2</b><span>同一线路的小邮差达到 10、25、50 位时，会触发线路里程碑，产出变为 ×1.5、×2、×2.5。</span></li>
-          <li><b>3</b><span>苔藓镇每两分半换一次天气，会给不同线路或蜡封盖戳带来额外倍率。</span></li>
-          <li><b>4</b><span>手边的风铃每 90 秒能摇一次，摇响后 20 秒内全邮局产出 ×3；有些来信要求整单不摇铃。</span></li>
-          <li><b>5</b><span>邮路柜台能同时派两位邮差出门，月光树还能再加一位。短程回信快，远程带回来的邮票更多；每完成 3 趟，熟练度升一级。</span></li>
-          <li><b>6</b><span>柜台来信有条件和时限，完成给邮票和墨点；每完成 4 封，夜班邮车会留下 1 枚月光邮戳。</span></li>
-          <li><b>7</b><span>墨点可以换一批来信，也能让在途的邮路立刻回来。它来自完美盖戳和柜台来信。</span></li>
-          <li><b>8</b><span>攒够 30,000 张邮票，夜班邮车会带来月光邮戳。用邮戳点亮月光树：每 1 点全局 +10%，节点永久保留；每程还能选一个夜班契约。</span></li>
-          <li><b>9</b><span>集邮册会记录特别的小事。每贴上一枚纪念邮票，所有产出永久再多一点。</span></li>
-          <li><b>10</b><span>偶尔会飘来闪光的信。离开时小邮差仍会送信，收益默认按一半计算，最多两小时；月光树能延长它。</span></li>
-          <li><b>11</b><span>邮册会自动合上并保存。手机端底部的快捷蜡封固定算“不错 ×1.5”，不参与完美判定。</span></li>
-          <li><b>12</b><span>邮路还能延伸到雾湖之外：随机地图、邮差牌、信件与干粮。失败只丢这一趟，奖励和月光邮戳会回流邮局。</span></li>
-        </ol>`
+      blocks: [
+        { type: "p", runs: [{ t: "点击大蜡封寄出一封信，邮票就是这间邮局的心跳。" }] },
+        {
+          type: "list",
+          items: tips.map((text, index) => ({ n: String(index + 1), text }))
+        }
+      ]
     });
   }
 
   function openResetModal() {
-    openModal({
+    openInfoModal({
       title: "重新开张？",
       tone: "danger",
       confirmLabel: "全部重置",
-      body: `
-        <p>这一程的邮票、小邮差、工坊邮戳、风铃、邮路、柜台来信、远行、月光树、墨点和集邮册都会一起被收走，在途的邮差也会回来。</p>
-        <p>苔藓镇会回到第一天。确定要重新开张吗？</p>`,
+      blocks: [
+        {
+          type: "p",
+          runs: [
+            {
+              t: "这一程的邮票、小邮差、工坊邮戳、风铃、邮路、柜台来信、远行、月光树、墨点和集邮册都会一起被收走，在途的邮差也会回来。"
+            }
+          ]
+        },
+        { type: "p", runs: [{ t: "苔藓镇会回到第一天。确定要重新开张吗？" }] }
+      ],
       action: resetGame
     });
   }
@@ -5461,12 +5535,29 @@ import { setExpeditionPrepSnapshot } from "./ui/expeditionPrepStore.js";
     if (!state) return;
     const gain = currentMoonGain();
     if (gain < 1) return;
-    openModal({
+    openInfoModal({
       title: "让夜班邮车出发？",
       confirmLabel: "发车",
-      body: `
-        <p>夜班邮车会收走这一程的 <b>${formatNumber(state.stamps)}</b>张邮票、所有小邮差、工坊邮戳和手上的来信。</p>
-        <p>你会留下 <b>${gain} 枚月光邮戳</b>，可以去月光树点一盏灯。集邮册、邮路熟练度、墨点和在途的邮差都会留到下一程；夜班契约会清空，下程重新选。</p>`,
+      blocks: [
+        {
+          type: "p",
+          runs: [
+            { t: "夜班邮车会收走这一程的 " },
+            { t: formatNumber(state.stamps), strong: true },
+            { t: "张邮票、所有小邮差、工坊邮戳和手上的来信。" }
+          ]
+        },
+        {
+          type: "p",
+          runs: [
+            { t: "你会留下 " },
+            { t: `${gain} 枚月光邮戳`, strong: true },
+            {
+              t: "，可以去月光树点一盏灯。集邮册、邮路熟练度、墨点和在途的邮差都会留到下一程；夜班契约会清空，下程重新选。"
+            }
+          ]
+        }
+      ],
       action: performPrestige
     });
   }
@@ -6400,70 +6491,84 @@ import { setExpeditionPrepSnapshot } from "./ui/expeditionPrepStore.js";
     if (!account || !account.token) return;
     openModal({
       title: "串门",
-      body: `<div class="town-box"><div class="town-loading">正在敲门…</div></div>`,
+      body: `<div data-friend-profile-root></div>`,
       footer: false,
       kicker: "镇口 · 好友"
     });
+    const root = els.modalBody.querySelector("[data-friend-profile-root]");
+    if (!root) return;
+    let friendData = {};
+    mountFriendProfile(root, {
+      onSend: () =>
+        openPostcardComposer(
+          friendData.id || id,
+          "user",
+          friendData.username || "好友"
+        ),
+      onVisit: () => visitFriendById(friendData.id || id),
+      onBack: () => openTown()
+    });
+    setFriendProfileSnapshot({ status: "loading" });
     try {
       const profile = await cloudApi.friendProfile(account, id);
-      const friend = profile.friend || {};
-      els.modalBody.innerHTML = `
-        <div class="town-box">
-          <div class="friend-profile">
-            <p class="friend-profile-kicker">好友的邮局</p>
-            <h4>${escapeHtml(friend.username || "一位邮差")}</h4>
-            <p class="town-lead">好友码 ${escapeHtml(friend.friend_code || "------")}</p>
-            <div class="friend-profile-stats">
-              <span><b>${formatNumber(friend.total_stamps || 0)}</b> 邮票</span>
-              <span><b>${formatNumber(friend.expedition_wins || 0)}</b> 趟远行</span>
-              <span><b>${formatNumber(profile.postcards_received || 0)}</b> 张明信片</span>
-              <span><b>${formatNumber(profile.visits_received || 0)}</b> 枚访客邮戳</span>
-            </div>
-            <p class="town-lead">最后活跃：${townTime(friend.last_active || 0)}。</p>
-          </div>
-          <div class="exp-result-actions">
-            <button class="exp-primary" type="button" data-send-postcard="${escapeHtml(friend.id || id)}" data-send-kind="user" data-send-name="${escapeHtml(friend.username || "好友")}">寄明信片</button>
-            <button class="exp-secondary" type="button" data-visit-friend="${escapeHtml(friend.id || id)}">留一枚访客邮戳</button>
-            <button class="exp-secondary" type="button" data-friend-back>回镇口</button>
-          </div>
-        </div>`;
+      friendData = profile.friend || {};
+      setFriendProfileSnapshot({
+        status: "ready",
+        friend: {
+          name: friendData.username || "一位邮差",
+          code: friendData.friend_code || "------",
+          stamps: formatNumber(friendData.total_stamps || 0),
+          wins: formatNumber(friendData.expedition_wins || 0),
+          postcards: formatNumber(profile.postcards_received || 0),
+          visits: formatNumber(profile.visits_received || 0),
+          activeText: townTime(friendData.last_active || 0)
+        }
+      });
     } catch (error) {
-      els.modalBody.innerHTML = `
-        <div class="town-box">
-          <p class="town-lead">${escapeHtml(cloudErrorMessage(error))}</p>
-          <button class="primary-btn" type="button" data-friend-back>回镇口</button>
-        </div>`;
+      setFriendProfileSnapshot({
+        status: "error",
+        error: cloudErrorMessage(error)
+      });
     }
+  }
+
+  function postcardComposerSnapshot(extra = {}) {
+    return {
+      templates: POSTCARD_TEMPLATES.map((template) => ({
+        id: template.id,
+        text: template.text
+      })),
+      status: "",
+      sending: false,
+      ...extra
+    };
   }
 
   function openPostcardComposer(id, kind, name) {
     postcardTarget = { id, kind, name };
     openModal({
       title: `给 ${name} 寄明信片`,
-      body: `
-        <div class="town-composer">
-          <p class="town-lead">挑一张明信片。对方会收到你的名字和这句话。</p>
-          <div class="town-template-list">
-            ${POSTCARD_TEMPLATES.map((template) => `
-              <button class="town-template" type="button" data-postcard-template="${template.id}">
-                ${template.text}
-              </button>`).join("")}
-          </div>
-          <p class="account-status" id="postcardStatus"></p>
-          <button class="link-btn" type="button" data-town-refresh>回镇口</button>
-        </div>`,
+      body: `<div data-postcard-root></div>`,
       footer: false,
       kicker: "镇口 · 明信片"
     });
+    const root = els.modalBody.querySelector("[data-postcard-root]");
+    if (!root) return;
+    mountPostcardComposer(root, {
+      onSend: (templateId) => sendTownPostcard(templateId),
+      onBack: () => openTown()
+    });
+    setPostcardComposerSnapshot(postcardComposerSnapshot());
   }
 
   async function sendTownPostcard(templateId) {
     if (!postcardTarget || !account || !account.token) return;
-    const status = document.getElementById("postcardStatus");
-    document.querySelectorAll("[data-postcard-template]").forEach((button) => {
-      button.disabled = true;
-    });
-    if (status) setText(status, "正在把明信片送出去…");
+    setPostcardComposerSnapshot(
+      postcardComposerSnapshot({
+        sending: true,
+        status: "正在把明信片送出去…"
+      })
+    );
     try {
       const result = await cloudApi.sendPostcard(
         account,
@@ -6476,10 +6581,11 @@ import { setExpeditionPrepSnapshot } from "./ui/expeditionPrepStore.js";
       postcardTarget = null;
       openTown();
     } catch (error) {
-      if (status) setText(status, cloudErrorMessage(error));
-      document.querySelectorAll("[data-postcard-template]").forEach((button) => {
-        button.disabled = false;
-      });
+      setPostcardComposerSnapshot(
+        postcardComposerSnapshot({
+          status: cloudErrorMessage(error)
+        })
+      );
     }
   }
 
@@ -6774,150 +6880,10 @@ import { setExpeditionPrepSnapshot } from "./ui/expeditionPrepStore.js";
       if (event.target === els.modal) closeModal();
     });
     els.modalBody.addEventListener("click", (event) => {
-      const choice = event.target.closest("[data-event-choice]");
-      if (!choice) return;
-      applyEventChoice(Number(choice.dataset.eventChoice));
-    });
-    els.modalBody.addEventListener("click", (event) => {
-      if (event.target.closest("[data-town-refresh]")) {
-        if (els.modalBody.querySelector(".town-composer")) openTown();
-        else loadTown();
-        return;
-      }
       if (event.target.closest("[data-town-login]")) {
         closeModal();
         openAccountModal();
-        return;
       }
-      if (event.target.closest("[data-copy-friend-code]")) {
-        copyFriendCode();
-        return;
-      }
-      if (event.target.closest("[data-friend-add]")) {
-        addFriendByCode();
-        return;
-      }
-      const acceptFriend = event.target.closest("[data-accept-friend]");
-      if (acceptFriend) {
-        acceptFriendRequest(Number(acceptFriend.dataset.acceptFriend));
-        return;
-      }
-      const declineFriend = event.target.closest("[data-decline-friend]");
-      if (declineFriend) {
-        declineFriendRequest(Number(declineFriend.dataset.declineFriend));
-        return;
-      }
-      const removeFriend = event.target.closest("[data-remove-friend]");
-      if (removeFriend) {
-        removeFriendById(removeFriend.dataset.removeFriend);
-        return;
-      }
-      const visitFriend = event.target.closest("[data-visit-friend]");
-      if (visitFriend) {
-        visitFriendById(visitFriend.dataset.visitFriend);
-        return;
-      }
-      const openSeeds = event.target.closest("[data-open-seeds]");
-      if (openSeeds) {
-        openSeedModal(Number(openSeeds.dataset.openSeeds));
-        return;
-      }
-      const plantSeed = event.target.closest("[data-plant-seed]");
-      if (plantSeed) {
-        plantGardenPlot(Number(plantSeed.dataset.plantSeed), plantSeed.dataset.crop);
-        return;
-      }
-      if (event.target.closest("[data-claim-quest]")) {
-        claimDailyGardenQuest();
-        return;
-      }
-      const waterPlot = event.target.closest("[data-water-plot]");
-      if (waterPlot) {
-        waterGardenPlot(Number(waterPlot.dataset.waterPlot));
-        return;
-      }
-      const harvestPlot = event.target.closest("[data-harvest-plot]");
-      if (harvestPlot) {
-        harvestGardenPlot(Number(harvestPlot.dataset.harvestPlot));
-        return;
-      }
-      const stealPlot = event.target.closest("[data-steal-plot]");
-      if (stealPlot) {
-        stealGardenPlot(stealPlot.dataset.ownerId, Number(stealPlot.dataset.stealPlot));
-        return;
-      }
-      const helpPlot = event.target.closest("[data-help-plot]");
-      if (helpPlot) {
-        helpGardenPlot(helpPlot.dataset.ownerId, Number(helpPlot.dataset.helpPlot));
-        return;
-      }
-      const gardenOpen = event.target.closest("[data-garden-open]");
-      if (gardenOpen) {
-        openGardenModal(gardenOpen.dataset.gardenOpen);
-        return;
-      }
-      if (event.target.closest("[data-garden-back]")) {
-        openTown();
-        return;
-      }
-      const friendProfile = event.target.closest("[data-friend-profile]");
-      if (friendProfile) {
-        openFriendProfile(friendProfile.dataset.friendProfile);
-        return;
-      }
-      if (event.target.closest("[data-friend-back]")) {
-        openTown();
-        return;
-      }
-      const claim = event.target.closest("[data-claim-postcard]");
-      if (claim) {
-        claimTownPostcard(Number(claim.dataset.claimPostcard));
-        return;
-      }
-      const send = event.target.closest("[data-send-postcard]");
-      if (send) {
-        openPostcardComposer(
-          send.dataset.sendPostcard,
-          send.dataset.sendKind,
-          send.dataset.sendName
-        );
-        return;
-      }
-      const template = event.target.closest("[data-postcard-template]");
-      if (template) {
-        sendTownPostcard(template.dataset.postcardTemplate);
-        return;
-      }
-    });
-    els.modalBody.addEventListener("click", (event) => {
-      const option = event.target.closest("[data-exp-option]");
-      if (option) { chooseExpeditionOption(Number(option.dataset.expOption)); return; }
-      const card = event.target.closest("[data-exp-card]");
-      if (card) { toggleExpeditionCard(Number(card.dataset.expCard)); return; }
-      const pick = event.target.closest("[data-exp-pick-card]");
-      if (pick) { chooseExpeditionCard(Number(pick.dataset.expPickCard)); return; }
-      const prepToggle = event.target.closest("[data-prep-toggle]");
-      if (prepToggle) { toggleExpeditionPrep(prepToggle.dataset.prepToggle); return; }
-      if (event.target.closest("[data-prep-start]")) { startExpeditionWithPrep(false); return; }
-      if (event.target.closest("[data-prep-skip]")) { startExpeditionWithPrep(true); return; }
-      if (event.target.closest("[data-exp-resolve]") || event.target.closest("[data-exp-resolve-empty]")) {
-        resolveExpedition();
-        return;
-      }
-      const camp = event.target.closest("[data-exp-camp]");
-      if (camp) { expeditionCamp(camp.dataset.expCamp); return; }
-      const trade = event.target.closest("[data-exp-trade]");
-      if (trade) { expeditionTrade(trade.dataset.expTrade); return; }
-      const choice = event.target.closest("[data-exp-event]");
-      if (choice) { expeditionEventChoice(Number(choice.dataset.expEvent)); return; }
-      const reward = event.target.closest("[data-exp-reward]");
-      if (reward) { claimExpeditionReward(Number(reward.dataset.expReward)); return; }
-      if (event.target.closest("[data-exp-close]")) { closeModal(); return; }
-      if (event.target.closest("[data-exp-abandon]")) { expConfirmAbandon = true; renderExpedition(); return; }
-      if (event.target.closest("[data-exp-abandon-confirm]")) { abandonExpedition(); return; }
-      if (event.target.closest("[data-exp-abandon-cancel]")) { expConfirmAbandon = false; renderExpedition(); return; }
-      if (event.target.closest("[data-exp-restart]")) { restartExpedition(); return; }
-      if (event.target.closest("[data-exp-finish]")) { closeExpeditionResult(); return; }
     });
     document.addEventListener("keydown", handleModalKeydown);
 
