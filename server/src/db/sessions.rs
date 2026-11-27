@@ -16,6 +16,10 @@ impl Db {
         now: i64,
         expires_at: i64,
     ) -> Result<(), ApiError> {
+        sqlx::query("DELETE FROM sessions WHERE expires_at <= $1")
+            .bind(now)
+            .execute(self.pool())
+            .await?;
         sqlx::query(
             "INSERT INTO sessions (token_hash, user_id, created_at, expires_at, last_seen)
              VALUES ($1, $2, $3, $4, $3)",
