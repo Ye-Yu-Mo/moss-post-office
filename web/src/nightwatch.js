@@ -139,6 +139,78 @@ const RECIPES = [
     radius: 2,
     unlockNight: 7,
     desc: "缠绕的月藤墙，会周期性震开影子。"
+  },
+  {
+    id: "nightcannon",
+    a: "postcannon",
+    b: "letter",
+    tier: 2,
+    name: "夜班炮台",
+    icon: "van",
+    hp: 420,
+    damage: 40,
+    cooldown: 0.85,
+    oil: 24,
+    interval: 7,
+    unlockNight: 9,
+    desc: "炮台接上一株信封草，打得更快，也结油。"
+  },
+  {
+    id: "inksea",
+    a: "inklight",
+    b: "inkberry",
+    tier: 2,
+    name: "墨海",
+    icon: "cloud",
+    hp: 360,
+    damage: 42,
+    cooldown: 1,
+    pierce: true,
+    slow: 0.6,
+    slowFor: 3,
+    unlockNight: 9,
+    desc: "整行墨光，拖得更狠，穿得更远。"
+  },
+  {
+    id: "moonwall",
+    a: "moontide",
+    b: "vine",
+    tier: 2,
+    name: "月墙",
+    icon: "boat",
+    hp: 1100,
+    burst: 45,
+    interval: 4.5,
+    radius: 2.2,
+    unlockNight: 9,
+    desc: "一堵会震波的月墙，影子撞不动。"
+  },
+  {
+    id: "goldvault",
+    a: "goldstamp",
+    b: "stamp",
+    tier: 2,
+    name: "金库",
+    icon: "sun",
+    hp: 260,
+    oil: 70,
+    interval: 4.5,
+    unlockNight: 9,
+    desc: "金邮票再叠一朵，灯油哗哗地来。"
+  },
+  {
+    id: "starburst",
+    a: "doubleletter",
+    b: "starchild",
+    tier: 2,
+    name: "星屑连发",
+    icon: "star",
+    hp: 280,
+    damage: 30,
+    cooldown: 0.5,
+    pierce: true,
+    unlockNight: 9,
+    desc: "连发草接上星屑，整行穿个不停。"
   }
 ];
 
@@ -287,7 +359,12 @@ export const NW_TOWER_LIST = Object.entries(TOWERS).map(([id, def]) => ({
   id,
   ...def
 }));
-export const NW_RECIPE_LIST = RECIPES.map((recipe) => ({ ...recipe }));
+export const NW_RECIPE_LIST = RECIPES.map((recipe) => ({
+  ...recipe,
+  tier: recipe.tier || 1,
+  aName: UNITS[recipe.a]?.name || recipe.a,
+  bName: UNITS[recipe.b]?.name || recipe.b
+}));
 export const NW_ENEMY_LIST = Object.entries(ENEMIES)
   .filter(([id]) => id !== "blob")
   .map(([id, def]) => ({ id, ...def }))
@@ -453,7 +530,8 @@ export function createNightWatch({
       cool: 0.2,
       oilTimer: def.interval || 0,
       burstTimer: def.interval || 0,
-      fusion: Boolean(TOWERS[type] === undefined)
+      fusion: Boolean(TOWERS[type] === undefined),
+      tier: TOWERS[type] ? 0 : 1
     };
   }
 
@@ -717,7 +795,7 @@ export function createNightWatch({
       return { ok: false, code: "outside" };
     }
     const existing = towerAt(col, row);
-    if (existing && existing.fusion) {
+    if (existing && existing.tier >= 2) {
       return { ok: false, code: "already-fused" };
     }
     if (existing) {
@@ -729,6 +807,7 @@ export function createNightWatch({
       oil -= def.cost;
       existing.type = recipe.id;
       existing.fusion = true;
+      existing.tier = recipe.tier || 1;
       existing.maxHp = Math.round(recipe.hp * bonus.hp * mod.towerHp);
       existing.hp = Math.round(recipe.hp * bonus.hp * mod.towerHp);
       existing.cool = 0.3;
@@ -754,7 +833,7 @@ export function createNightWatch({
           list.push({ col, row, kind: "place" });
           continue;
         }
-        if (existing.fusion) continue;
+        if (existing.tier >= 2) continue;
         const recipe = findRecipe(existing.type, selected);
         if (recipe && recipe.unlockNight <= nightLevel) {
           list.push({ col, row, kind: "fuse" });
@@ -775,6 +854,7 @@ export function createNightWatch({
         row: tower.row,
         col: tower.col,
         fusion: Boolean(tower.fusion),
+        tier: tower.tier || 0,
         hp: Math.max(0, Math.round(tower.hp)),
         maxHp: tower.maxHp,
         percent: Math.max(0, Math.round((tower.hp / tower.maxHp) * 100))

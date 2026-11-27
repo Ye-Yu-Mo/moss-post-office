@@ -58,7 +58,7 @@ pub async fn put_save(
 
     let updated_at = now();
     let client_ts = request.client_ts.clamp(0, updated_at + 86_400);
-    let (total_stamps, expedition_wins) = public_stats(&request.payload);
+    let (total_stamps, expedition_wins, night_best) = public_stats(&request.payload);
     let user_id = context.user.id;
     let outcome = state
         .db
@@ -75,7 +75,7 @@ pub async fn put_save(
         Ok(revision) => {
             state
                 .db
-                .update_stats(user_id, total_stamps, expedition_wins, updated_at)
+                .update_stats(user_id, total_stamps, expedition_wins, night_best, updated_at)
                 .await?;
             Ok(Json(json!({ "revision": revision })))
         }

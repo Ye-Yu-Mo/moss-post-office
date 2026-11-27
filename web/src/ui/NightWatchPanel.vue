@@ -1,5 +1,25 @@
 <template>
   <div v-if="snapshot" class="nw-panel">
+    <div class="nw-view-switch" role="tablist" aria-label="守夜视图">
+      <button
+        class="nw-view-tab"
+        :class="{ 'is-active': view === 'watch' }"
+        type="button"
+        role="tab"
+        :aria-selected="view === 'watch'"
+        @click="view = 'watch'"
+      >守夜</button>
+      <button
+        class="nw-view-tab"
+        :class="{ 'is-active': view === 'archive' }"
+        type="button"
+        role="tab"
+        :aria-selected="view === 'archive'"
+        @click="view = 'archive'"
+      >档案</button>
+    </div>
+
+    <template v-if="view === 'watch'">
     <div class="nw-panel-head">
       <div>
         <p class="nw-panel-kicker">夜班 · 守夜防线</p>
@@ -103,7 +123,7 @@
           <span class="nw-recipe-icon" v-html="icons[recipe.icon] || ''"></span>
           <div>
             <b>{{ recipe.name }}</b>
-            <small>{{ recipe.aName }} + {{ recipe.bName }}{{ recipe.unlocked ? "" : ` · 第 ${recipe.unlockNight} 夜` }}</small>
+            <small>{{ recipe.aName }} + {{ recipe.bName }}{{ recipe.tier === 2 ? " · 进阶" : "" }}{{ recipe.unlocked ? "" : ` · 第 ${recipe.unlockNight} 夜` }}</small>
             <p>{{ recipe.desc }}</p>
           </div>
         </article>
@@ -114,11 +134,67 @@
       灯油自己会慢慢攒，邮票花每 6.5 秒结一滴。门板 100 点，影子摸到就扣；守住全部波次才算天亮。
       失败不扣存档，只是这一夜没有奖励。
     </p>
+    </template>
+
+    <template v-else>
+      <div class="nw-archive">
+        <div class="nw-stats">
+          <span><small>最远</small><b>第 {{ snapshot.best }} 夜</b></span>
+          <span><small>守住</small><b>{{ snapshot.wins }} 次</b></span>
+          <span><small>打散</small><b>{{ snapshot.kills }} 个影子</b></span>
+        </div>
+
+        <div class="nw-section">
+          <div class="tree-head"><span>纪念戳</span><span>{{ ownedMedals }} / {{ snapshot.medals.length }}</span></div>
+          <div class="nw-medal-list">
+            <article
+              v-for="medal in snapshot.medals"
+              :key="medal.level"
+              class="nw-medal-row"
+              :class="{ 'is-owned': medal.owned, 'is-locked': !medal.owned && !medal.reached }"
+            >
+              <span class="nw-medal-icon" aria-hidden="true" v-html="medal.icon"></span>
+              <div>
+                <b>{{ medal.name }}</b>
+                <small>
+                  {{ medal.owned
+                    ? medal.serialText
+                    : medal.reached
+                      ? "已守住 · 待登录签发"
+                      : `守住第 ${medal.level} 夜 · 限 ${medal.edition} 枚` }}
+                </small>
+              </div>
+            </article>
+          </div>
+          <p class="nw-rules">纪念戳由服务端签发，转生和换设备都会保留。</p>
+        </div>
+
+        <div class="nw-section">
+          <div class="tree-head"><span>最近的夜</span><span>{{ snapshot.history.length }} 场</span></div>
+          <p v-if="!snapshot.history.length" class="nw-empty">还没有守夜记录，先去开第一夜吧。</p>
+          <div v-else class="nw-history">
+            <div
+              v-for="(run, index) in snapshot.history"
+              :key="index"
+              class="nw-history-row"
+              :class="{ 'is-won': run.won }"
+            >
+              <b>第 {{ run.level }} 夜</b>
+              <span>{{ run.won ? "守住" : "失守" }} · 第 {{ run.wave }}/{{ run.waves }} 波 · 打散 {{ run.kills }}</span>
+              <small>{{ run.timeText }}</small>
+            </div>
+          </div>
+          <p class="nw-rules">只记最近 20 场；失败也会留下记录，方便回看哪一夜开始吃力。</p>
+        </div>
+
+        <button class="primary-btn nw-archive-start" type="button" @click="view = 'watch'">去守一夜</button>
+      </div>
+    </template>
   </div>
 </template>
 
 <script setup>
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { nightPanelStore } from "./nightPanelStore.js";
 
 defineProps({
@@ -127,4 +203,8 @@ defineProps({
 });
 
 const snapshot = computed(() => nightPanelStore.snapshot);
+const view = ref("watch");
+const ownedMedals = computed(
+  () => (snapshot.value?.medals || []).filter((medal) => medal.owned).length
+);
 </script>

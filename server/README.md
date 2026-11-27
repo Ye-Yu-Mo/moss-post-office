@@ -193,6 +193,7 @@ curl -sS -X POST http://127.0.0.1:17322/v1/events \
 ## 收藏品
 
 - `collectibles` 表记录 kind/template/edition/serial/image_key；每用户每模板只能有一枚。
+- `users.night_best` 由存档上传时的 `nightWatch.best` 更新，`/v1/square` 返回给镇口排行。
 - 明信片单版 200 枚，套装徽章 50 枚；serial 由服务端单调分配，超发拒绝。
 - 守夜纪念戳：`POST /v1/nightwatch/claim { level }`，只接受 5 / 10 / 15；对应 `nightwatch` 模板 `night_5` / `night_10` / `night_15`，edition 100 / 50 / 25，每用户每模板只能领一次，重复请求返回 `collectible: null`。
 - 目前美术使用现有 AI 图标作为占位；完整 AI 插画待图片接口配额恢复后替换。
@@ -200,7 +201,7 @@ curl -sS -X POST http://127.0.0.1:17322/v1/events \
 ## 数据与备份
 
 - 表：`users`、`sessions`、`login_challenges`、`saves`、`events`、`bots`、`postcards`、`postcard_sends`、`friend_requests`、`friendships`、`friend_visits`、`collectibles`、`garden_plots`、`garden_steals`；SQLite WAL。
-- v1 的匿名表重命名为 `*_v1_legacy`；v2 的 Argon2 密码表重命名为 `*_v2_legacy`，都不会被静默删除。v4 给 `users` 增加公开统计列并创建社交表；v5 增加 `friend_code` 与好友关系表；v6 增加 `friend_visits`；v7 增加 `collectibles`；v8 增加 `garden_plots` / `garden_steals`；v9 增加浇水状态；v10 增加 `users.garden_harvests` 与稀有种子解锁；v11 增加 `garden_helps`；v12 增加作物统计与来访日志；v13 增加每日菜园订单。
+- v1 的匿名表重命名为 `*_v1_legacy`；v2 的 Argon2 密码表重命名为 `*_v2_legacy`，都不会被静默删除。v4 给 `users` 增加公开统计列并创建社交表；v5 增加 `friend_code` 与好友关系表；v6 增加 `friend_visits`；v7 增加 `collectibles`；v8 增加 `garden_plots` / `garden_steals`；v9 增加浇水状态；v10 增加 `users.garden_harvests` 与稀有种子解锁；v11 增加 `garden_helps`；v12 增加作物统计与来访日志；v13 增加每日菜园订单；v14 增加 `users.night_best`。
 - `verifier` 是 256 位派生值；它等价于本站的登录密钥，数据库泄露仍会导致账号被冒用，请限制 DB 访问并备份加密。
 - 备份：`sqlite3 data/moss.db ".backup 'backup.db'"`，或停服务后连同 `-wal/-shm` 一起复制。
 - 事件表会持续增长；上线后按周归档或保留 90 天。

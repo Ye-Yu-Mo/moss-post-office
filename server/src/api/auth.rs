@@ -105,10 +105,10 @@ pub async fn register(
         })
         .await?;
 
-    if let Some((total_stamps, expedition_wins)) = stats {
+    if let Some((total_stamps, expedition_wins, night_best)) = stats {
         state
             .db
-            .update_stats(user_id.clone(), total_stamps, expedition_wins, created_at)
+            .update_stats(user_id.clone(), total_stamps, expedition_wins, night_best, created_at)
             .await?;
     }
 

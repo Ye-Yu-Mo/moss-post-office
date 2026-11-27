@@ -59,7 +59,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/v1/garden/{id}/help", post(garden::help_water))
 }
 
-pub(crate) fn public_stats(payload: &serde_json::Value) -> (i64, i64) {
+pub(crate) fn public_stats(payload: &serde_json::Value) -> (i64, i64, i64) {
     let read = |key: &str| -> i64 {
         payload
             .get(key)
@@ -67,7 +67,13 @@ pub(crate) fn public_stats(payload: &serde_json::Value) -> (i64, i64) {
             .unwrap_or(0.0)
             .clamp(0.0, 1e15) as i64
     };
-    (read("totalEarned"), read("expeditionWins"))
+    let night_best = payload
+        .get("nightWatch")
+        .and_then(|progress| progress.get("best"))
+        .and_then(|value| value.as_f64())
+        .unwrap_or(0.0)
+        .clamp(0.0, 1e6) as i64;
+    (read("totalEarned"), read("expeditionWins"), night_best)
 }
 
 pub(crate) fn now() -> i64 {

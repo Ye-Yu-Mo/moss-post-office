@@ -41,7 +41,7 @@
           :aria-label="cell.tower ? `${cell.tower.name}，生命 ${cell.tower.hp}` : `第 ${cell.row + 1} 行第 ${cell.col + 1} 格`"
           @click="handlers.onCell(cell.col, cell.row)"
         >
-          <span v-if="cell.tower" class="nw-unit" :class="{ 'is-fusion': cell.tower.fusion }">
+          <span v-if="cell.tower" class="nw-unit" :class="{ 'is-fusion': cell.tower.fusion, 'is-tier2': cell.tower.tier >= 2 }">
             <span class="nw-unit-icon" v-html="icons[cell.tower.icon] || ''"></span>
             <i class="nw-unit-hp"><i :style="{ width: cell.tower.percent + '%' }"></i></i>
           </span>
@@ -77,6 +77,7 @@
         <p>雾从邮路尽头漫上来。把信封草、邮票花和彩纸藤种在格子里，别让影子摸到门板。</p>
         <p class="nw-overlay-note">相同的两株、或者有配方的两株，种在同一格就能融合。</p>
         <p class="nw-overlay-note">夜蛾飞过墙，夜鼠偷灯油，鼓手会给同伴加速。</p>
+        <p v-if="snapshot.level >= 9" class="nw-overlay-note">第 9 夜起，融合体还能再和基础植物融合一次。</p>
         <p v-if="snapshot.modifier.name" class="nw-overlay-note">
           今日词条「{{ snapshot.modifier.name }}」：{{ snapshot.modifier.desc }}{{ snapshot.modifier.rewardText ? ` · ${snapshot.modifier.rewardText}` : "" }}
         </p>
@@ -207,9 +208,7 @@ const hintText = computed(() => {
   const fuses = source.spots.filter((spot) => spot.kind === "fuse").length;
   const hints = source.fusionHints || [];
   const fusionText = hints.length
-    ? `能和${hints.map((hint) => hint.partner).join("、")}同格融合成${hints
-        .map((hint) => hint.name)
-        .join("、")}。`
+    ? `同格可以融合：${hints.map((hint) => `${hint.partner}→${hint.name}`).join("、")}。`
     : "";
   return fuses
     ? `${selectedCard.name}：${fusionText}金色格子可融合（${fuses} 处）。`

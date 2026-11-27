@@ -115,14 +115,15 @@ impl Db {
         user_id: String,
         total_stamps: i64,
         expedition_wins: i64,
+        night_best: i64,
         now: i64,
     ) -> Result<(), ApiError> {
         self.call(move |conn| {
             conn.execute(
                 "UPDATE users
-                 SET total_stamps = ?1, expedition_wins = ?2, last_active = ?3
-                 WHERE id = ?4",
-                params![total_stamps, expedition_wins, now, user_id],
+                 SET total_stamps = ?1, expedition_wins = ?2, night_best = ?3, last_active = ?4
+                 WHERE id = ?5",
+                params![total_stamps, expedition_wins, night_best, now, user_id],
             )?;
             Ok(())
         })

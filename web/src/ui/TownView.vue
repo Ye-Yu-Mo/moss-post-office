@@ -115,6 +115,7 @@
           <div class="town-player-stats">
             <span>{{ fmt(player.total_stamps) }} 邮票</span>
             <span>{{ fmt(player.expedition_wins) }} 趟远行</span>
+            <span>{{ fmt(player.night_best || 0) }} 夜守夜</span>
           </div>
           <div class="town-player-actions">
             <small>{{ time(player.last_active) }}</small>

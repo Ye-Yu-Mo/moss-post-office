@@ -72,6 +72,7 @@ pub struct SquarePlayer {
     pub bio: String,
     pub total_stamps: i64,
     pub expedition_wins: i64,
+    pub night_best: i64,
     pub last_active: i64,
     pub kind: &'static str,
 }
@@ -95,6 +96,7 @@ pub async fn square(
             bio: String::new(),
             total_stamps: user.total_stamps,
             expedition_wins: user.expedition_wins,
+            night_best: user.night_best,
             last_active: user.last_active,
             kind: "user",
         });
@@ -106,6 +108,7 @@ pub async fn square(
             bio: bot.bio,
             total_stamps: bot.total_stamps,
             expedition_wins: bot.expedition_wins,
+            night_best: bot.night_best,
             last_active: bot.last_active,
             kind: "bot",
         });

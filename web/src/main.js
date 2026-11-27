@@ -1294,7 +1294,8 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
         points: 0,
         talents: {},
         pendingMedals: [],
-        modifier: null
+        modifier: null,
+        history: []
       },
       gens: Object.fromEntries(GENERATORS.map((gen) => [gen.id, 0])),
       boughtTotal: Object.fromEntries(GENERATORS.map((gen) => [gen.id, 0])),
@@ -1412,6 +1413,19 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
       clean.nightWatch.kills = Math.max(0, Math.floor(numberOr(raw.nightWatch.kills)));
       clean.nightWatch.points = Math.max(0, Math.floor(numberOr(raw.nightWatch.points)));
       clean.nightWatch.best = Math.min(clean.nightWatch.best, clean.nightWatch.night - 1);
+      if (Array.isArray(raw.nightWatch.history)) {
+        clean.nightWatch.history = raw.nightWatch.history
+          .filter((run) => run && typeof run === "object")
+          .map((run) => ({
+            level: Math.max(1, Math.floor(numberOr(run.level, 1))),
+            won: Boolean(run.won),
+            wave: Math.max(0, Math.floor(numberOr(run.wave))),
+            waves: Math.max(1, Math.floor(numberOr(run.waves, 1))),
+            kills: Math.max(0, Math.floor(numberOr(run.kills))),
+            at: numberOr(run.at)
+          }))
+          .slice(0, 20);
+      }
       const savedModifier = raw.nightWatch.modifier;
       if (
         savedModifier &&
@@ -4651,9 +4665,7 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
     }));
     const recipes = NW_RECIPE_LIST.map((recipe) => ({
       ...recipe,
-      unlocked: recipe.unlockNight <= night,
-      aName: NW_TOWER_LIST.find((tower) => tower.id === recipe.a)?.name || recipe.a,
-      bName: NW_TOWER_LIST.find((tower) => tower.id === recipe.b)?.name || recipe.b
+      unlocked: recipe.unlockNight <= night
     }));
     const unlocks = [
       ...towers
@@ -4680,6 +4692,22 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
         ...nightModifierSnapshot(currentNightModifier()),
         canReroll: progress.points >= 1
       },
+      medals: NIGHT_MEDALS.map((medal) => {
+        const owned = collectibleFor("nightwatch", medal.template);
+        return {
+          level: medal.level,
+          name: medal.name,
+          icon: ICONS[medal.icon],
+          edition: medal.edition,
+          reached: (progress.best || 0) >= medal.level,
+          owned: Boolean(owned),
+          serialText: owned ? `#${owned.serial} / ${owned.edition}` : ""
+        };
+      }),
+      history: (progress.history || []).map((run) => ({
+        ...run,
+        timeText: townTime(run.at)
+      })),
       enemies: NW_ENEMY_LIST.map((enemy) => ({
         ...enemy,
         unlocked: enemy.unlockNight <= night
@@ -4798,7 +4826,20 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
 
   function handleNightFinish(result) {
     stopNightClock();
+    const progress = state.nightWatch;
+    progress.history = [
+      {
+        level: result.level,
+        won: result.won,
+        wave: result.wave,
+        waves: result.waves,
+        kills: result.kills,
+        at: Date.now()
+      },
+      ...(progress.history || [])
+    ].slice(0, 20);
     if (!result.won) {
+      saveGame();
       showToast(`第 ${result.level} 夜没守住，门板被撞开了。`, 3600);
       return;
     }
@@ -4812,7 +4853,6 @@ import { setNightPanelSnapshot } from "./ui/nightPanelStore.js";
     if (rewards.wax) {
       state.materials.wax = Math.min(99, (state.materials.wax || 0) + rewards.wax);
     }
-    const progress = state.nightWatch;
     progress.night = Math.max(progress.night, result.level + 1);
     progress.best = Math.max(progress.best, result.level);
     progress.wins += 1;

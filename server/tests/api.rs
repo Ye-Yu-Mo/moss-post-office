@@ -1156,3 +1156,36 @@ async fn nightwatch_medals_are_serialized_and_idempotent() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
+
+#[tokio::test]
+async fn save_publishes_best_night_to_square() {
+    let (app, _dir) = test_app();
+    let registered = register_ok(&app, "night_rank", None).await;
+    let token = registered["token"].as_str().unwrap();
+
+    let response = app
+        .clone()
+        .oneshot(save_request(
+            token,
+            0,
+            json!({ "totalEarned": 123, "nightWatch": { "best": 7 } }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let response = app
+        .clone()
+        .oneshot(auth_request("GET", "/v1/square", token))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let square = json_body(response).await;
+    let me = square["players"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|player| player["name"] == "night_rank")
+        .expect("registered player in square");
+    assert_eq!(me["night_best"], 7);
+}

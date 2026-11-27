@@ -8,6 +8,7 @@ pub struct SquareUser {
     pub username: String,
     pub total_stamps: i64,
     pub expedition_wins: i64,
+    pub night_best: i64,
     pub last_active: i64,
 }
 
@@ -19,6 +20,7 @@ pub struct BotSummary {
     pub bio: String,
     pub total_stamps: i64,
     pub expedition_wins: i64,
+    pub night_best: i64,
     pub last_active: i64,
 }
 
@@ -90,7 +92,7 @@ impl Db {
             let mut players = Vec::new();
             {
                 let mut statement = conn.prepare(
-                    "SELECT id, username, total_stamps, expedition_wins, last_active
+                    "SELECT id, username, total_stamps, expedition_wins, night_best, last_active
                      FROM users
                      ORDER BY total_stamps DESC, last_active DESC
                      LIMIT 20",
@@ -101,7 +103,8 @@ impl Db {
                         username: row.get(1)?,
                         total_stamps: row.get(2)?,
                         expedition_wins: row.get(3)?,
-                        last_active: row.get(4)?,
+                        night_best: row.get(4)?,
+                        last_active: row.get(5)?,
                     })
                 })?;
                 for row in rows {
@@ -144,6 +147,7 @@ impl Db {
                     let variation = hash_text(&id) % 97;
                     let total_stamps = base_stamps + age_days * daily_stamps + variation;
                     let expedition_wins = base_wins + age_days * daily_wins + (variation % 2);
+                    let night_best = 3 + hash_text(&id) % 9;
                     let last_active = now - (60 + hash_text(&id) % 3_600);
                     bots.push(BotSummary {
                         id,
@@ -152,6 +156,7 @@ impl Db {
                         bio,
                         total_stamps,
                         expedition_wins,
+                        night_best,
                         last_active,
                     });
                 }
